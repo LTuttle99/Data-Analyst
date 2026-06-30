@@ -1,7 +1,6 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+import os
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 import json
 
@@ -11,6 +10,9 @@ app = FastAPI(title="Book of Business Intelligent Analyzer")
 
 # Basic memory cache for demonstration simplicity
 UPLOADED_FILE_CACHE = {}
+
+# BASE_DIR finds the absolute root of your project folder wherever it runs
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -41,11 +43,18 @@ async def analyze_data(request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# Inline UI Serving Implementation
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
-    with open("templates/index.html", "r") as f:
-        return HTMLResponse(content=f.read())
+    # Construct a bulletproof absolute path to templates/index.html
+    template_path = os.path.join(BASE_DIR, "templates", "index.html")
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Template not found at structural path: {template_path}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
