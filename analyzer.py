@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import io
-import json
 
 class BookOfBusinessAnalyzer:
     def __init__(self, file_bytes: bytes, file_name: str):
@@ -25,12 +24,12 @@ class BookOfBusinessAnalyzer:
             "financial_metric": None,
             "timeline_metric": None,
             "categorical_segment": None,
+            "profit_center": None,
             "client_id": None
         }
         
         columns = self.df.columns.tolist()
         
-        # Lowercase mapping for keywords
         for col in columns:
             col_lower = str(col).lower()
             
@@ -46,6 +45,12 @@ class BookOfBusinessAnalyzer:
                     schema["timeline_metric"] = col
                     continue
                     
+            # Profit Center Mapping
+            if not schema["profit_center"]:
+                if any(kw in col_lower for kw in ["profit", "center", "pc", "department", "unit", "branch"]):
+                    schema["profit_center"] = col
+                    continue
+
             # Categorical Mapping
             if not schema["categorical_segment"]:
                 if any(kw in col_lower for kw in ["broker", "region", "product", "lob", "type", "segment", "state"]):
@@ -66,19 +71,32 @@ class BookOfBusinessAnalyzer:
             date_cols = self.df.select_dtypes(include=['datetime', 'object']).columns
             if len(date_cols) > 0: schema["timeline_metric"] = date_cols[0]
 
+        if not schema["profit_center"]:
+            cat_cols = self.df.select_dtypes(include=['object', 'category']).columns
+            if len(cat_cols) > 1: schema["profit_center"] = cat_cols[1]
         if not schema["categorical_segment"]:
             cat_cols = self.df.select_dtypes(include=['object', 'category']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        return {"columns": columns, "inferred_mapping": schema}
+        # Extract unique profit centers for frontend filtering dropdown initialization
+        unique_profit_centers = []
+        if schema["profit_center"] and schema["profit_center"] in self.df.columns:
+            unique_profit_centers = sorted(self.df[schema["profit_center"]].dropna().unique().astype(str).tolist())
 
-    def run_analysis(self, mapping: dict) -> dict:
+        return {
+            "columns": columns, 
+            "inferred_mapping": schema,
+            "profit_centers": unique_profit_centers
+        }
+
+    def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL", projection_target: str = "premium") -> dict:
         """
-        Executes core analytical computations using user-confirmed mappings.
+        Executes core analytical computations filtered from year 2022 onwards.
         """
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
         cat_col = mapping.get("categorical_segment")
+        pc_col = mapping.get("profit_center")
         id_col = mapping.get("client_id")
 
         if not fin_col or not time_col:
@@ -88,7 +106,22 @@ class BookOfBusinessAnalyzer:
         working_df = self.df.copy()
         working_df[time_col] = pd.to_datetime(working_df[time_col], errors='coerce')
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
-        working_df = working_df.dropna(subset=[time_col]).sort_values(by=time_col)
+        working_df = working_df.dropna(subset=[time_col])
+
+        # CRITICAL FILTER: Restrict data analysis scope starting from 2022
+        working_df = working_df[working_df[time_col].dt.year >= 2022]
+        working_df = working_df.sort_values(by=time_col)
+
+        # Dynamic Segment Filter: Slice by Profit Center if requested
+        if pc_col and pc_col in working_df.columns and selected_profit_center != "ALL":
+            working_df = working_df[working_df[pc_col].astype(str) == selected_profit_center]
+
+        if working_df.empty:
+            return {
+                "kpis": {"total_premium": 0, "total_accounts": 0, "avg_account_size": 0},
+                "historical_timeline": {"labels": [], "values": [], "rolling_avg": [], "mom_growth": []},
+                "segment_distribution": {}, "seasonality": {}, "projections": [], "anomalies": []
+            }
 
         # 1. High Level KPIs
         total_premium = float(working_df[fin_col].sum())
@@ -97,31 +130,43 @@ class BookOfBusinessAnalyzer:
 
         # 2. Historical Trends & Rolling Metrics
         working_df['YearMonth'] = working_df[time_col].dt.to_period('M')
-        monthly_df = working_df.groupby('YearMonth')[fin_col].sum().reset_index()
+        
+        # Calculate monthly totals for premium vs policy count
+        monthly_groups = working_df.groupby('YearMonth')
+        monthly_premium = monthly_groups[fin_col].sum()
+        monthly_count = monthly_groups[id_col].nunique() if id_col else monthly_groups.size()
+
+        monthly_df = pd.DataFrame({
+            'premium': monthly_premium,
+            'count': monthly_count
+        }).reset_index()
         monthly_df['YearMonthStr'] = monthly_df['YearMonth'].astype(str)
         
-        # Rolling Average (3-Month Window)
-        monthly_df['RollingAvg'] = monthly_df[fin_col].rolling(window=3, min_periods=1).mean()
+        # Choose targets based on interactive state configuration
+        target_series = 'premium' if projection_target == "premium" else 'count'
         
-        # Period-over-Period Growth (Handle infinity/division by zero gracefully)
-        monthly_df['MoM_Growth'] = monthly_df[fin_col].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0) * 100
+        # Rolling Average (3-Month Window)
+        monthly_df['RollingAvg'] = monthly_df[target_series].rolling(window=3, min_periods=1).mean()
+        
+        # Period-over-Period Growth
+        monthly_df['MoM_Growth'] = monthly_df[target_series].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0) * 100
 
         # 3. Segment Performance
         segment_data = {}
         if cat_col and cat_col in working_df.columns:
-            seg_summary = working_df.groupby(cat_col)[fin_col].sum().sort_values(ascending=False)
+            seg_summary = working_df.groupby(cat_col)[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('sum' if projection_target == "premium" else 'nunique').sort_values(ascending=False)
             segment_data = {str(k): float(v) for k, v in seg_summary.items() if not np.isinf(v) and not np.isnan(v)}
 
-        # 4. Root Cause Analysis
+        # 4. Root Cause Analysis / Seasonality Profile
         working_df['MonthName'] = working_df[time_col].dt.strftime('%B')
-        seasonality = working_df.groupby('MonthName')[fin_col].mean().to_dict()
-        seasonality = {k: (float(v) if not np.isinf(v) and not np.isnan(v) else 0.0) for k, v in seasonality.items()}
+        season_summary = working_df.groupby('MonthName')[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('mean' if projection_target == "premium" else 'nunique')
+        seasonality = {k: (float(v) if not np.isinf(v) and not np.isnan(v) else 0.0) for k, v in season_summary.to_dict().items()}
 
-        # 5. Predictive Time-Series Projections
+        # 5. Predictive Time-Series Projections (Premium or Policy Count)
         projections = []
         if len(monthly_df) > 1:
             X = np.arange(len(monthly_df)).reshape(-1, 1)
-            y = monthly_df[fin_col].values
+            y = monthly_df[target_series].values
             model = LinearRegression().fit(X, y)
             
             future_X = np.arange(len(monthly_df), len(monthly_df) + 12).reshape(-1, 1)
@@ -147,19 +192,18 @@ class BookOfBusinessAnalyzer:
                         anomalies.append({
                             "identifier": str(row[id_col]) if id_col else f"Row {idx}",
                             "value": val,
-                            "reason": "Extreme deviation from base metrics"
+                            "reason": "Extreme deviation from baseline premium averages"
                         })
 
-        # Final sanitization pass for safety to ensure clean JSON output
-        clean_timeline_values = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df[fin_col].tolist()]
+        clean_timeline_values = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df[target_series].tolist()]
         clean_rolling_avg = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df['RollingAvg'].tolist()]
         clean_mom_growth = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df['MoM_Growth'].tolist()]
 
         return {
             "kpis": {
-                "total_premium": total_premium if not np.isinf(total_premium) and not np.isnan(total_premium) else 0.0,
+                "total_premium": total_premium,
                 "total_accounts": total_accounts,
-                "avg_account_size": avg_account_size if not np.isinf(avg_account_size) and not np.isnan(avg_account_size) else 0.0
+                "avg_account_size": avg_account_size
             },
             "historical_timeline": {
                 "labels": monthly_df['YearMonthStr'].tolist(),
