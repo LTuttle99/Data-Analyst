@@ -103,36 +103,37 @@ class BookOfBusinessAnalyzer:
         # Rolling Average (3-Month Window)
         monthly_df['RollingAvg'] = monthly_df[fin_col].rolling(window=3, min_periods=1).mean()
         
-        # Period-over-Period Growth
-        monthly_df['MoM_Growth'] = monthly_df[fin_col].pct_change().fillna(0) * 100
+        # Period-over-Period Growth (Handle infinity/division by zero gracefully)
+        monthly_df['MoM_Growth'] = monthly_df[fin_col].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0) * 100
 
         # 3. Segment Performance
         segment_data = {}
         if cat_col and cat_col in working_df.columns:
             seg_summary = working_df.groupby(cat_col)[fin_col].sum().sort_values(ascending=False)
-            segment_data = {str(k): float(v) for k, v in seg_summary.items()}
+            segment_data = {str(k): float(v) for k, v in seg_summary.items() if not np.isinf(v) and not np.isnan(v)}
 
-        # 4. Root Cause Analysis (Correlation of low revenue periods vs month/segments)
+        # 4. Root Cause Analysis
         working_df['MonthName'] = working_df[time_col].dt.strftime('%B')
         seasonality = working_df.groupby('MonthName')[fin_col].mean().to_dict()
+        seasonality = {k: (float(v) if not np.isinf(v) and not np.isnan(v) else 0.0) for k, v in seasonality.items()}
 
-        # 5. Predictive Time-Series Projections (Linear Regression Trendlines)
+        # 5. Predictive Time-Series Projections
         projections = []
         if len(monthly_df) > 1:
             X = np.arange(len(monthly_df)).reshape(-1, 1)
             y = monthly_df[fin_col].values
             model = LinearRegression().fit(X, y)
             
-            # Predict next 12 periods
             future_X = np.arange(len(monthly_df), len(monthly_df) + 12).reshape(-1, 1)
             future_predictions = model.predict(future_X)
             
             last_date = working_df[time_col].max()
             for i, pred in enumerate(future_predictions):
                 next_month = (last_date + pd.DateOffset(months=i+1)).strftime('%Y-%m')
-                projections.append({"period": next_month, "projected_value": max(0.0, float(pred))})
+                val = float(pred) if not np.isinf(pred) and not np.isnan(pred) else 0.0
+                projections.append({"period": next_month, "projected_value": max(0.0, val)})
 
-        # 6. Statistical Anomaly Detection (Z-Score > 2.0 or Outliers)
+        # 6. Statistical Anomaly Detection
         anomalies = []
         if len(working_df) > 3:
             mean_val = working_df[fin_col].mean()
@@ -141,26 +142,33 @@ class BookOfBusinessAnalyzer:
                 working_df['Z_Score'] = (working_df[fin_col] - mean_val) / std_val
                 outliers = working_df[abs(working_df['Z_Score']) > 2.0]
                 for idx, row in outliers.iterrows():
-                    anomalies.append({
-                        "identifier": str(row[id_col]) if id_col else f"Row {idx}",
-                        "value": float(row[fin_col]),
-                        "reason": "Extreme deviation from base metrics (High Z-Score)" if row['Z_Score'] > 0 else "Unusual volume dropped variant"
-                    })
+                    val = float(row[fin_col])
+                    if not np.isinf(val) and not np.isnan(val):
+                        anomalies.append({
+                            "identifier": str(row[id_col]) if id_col else f"Row {idx}",
+                            "value": val,
+                            "reason": "Extreme deviation from base metrics"
+                        })
+
+        # Final sanitization pass for safety to ensure clean JSON output
+        clean_timeline_values = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df[fin_col].tolist()]
+        clean_rolling_avg = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df['RollingAvg'].tolist()]
+        clean_mom_growth = [float(v) if not np.isinf(v) and not np.isnan(v) else 0.0 for v in monthly_df['MoM_Growth'].tolist()]
 
         return {
             "kpis": {
-                "total_premium": total_premium,
+                "total_premium": total_premium if not np.isinf(total_premium) and not np.isnan(total_premium) else 0.0,
                 "total_accounts": total_accounts,
-                "avg_account_size": avg_account_size
+                "avg_account_size": avg_account_size if not np.isinf(avg_account_size) and not np.isnan(avg_account_size) else 0.0
             },
             "historical_timeline": {
                 "labels": monthly_df['YearMonthStr'].tolist(),
-                "values": monthly_df[fin_col].tolist(),
-                "rolling_avg": monthly_df['RollingAvg'].tolist(),
-                "mom_growth": monthly_df['MoM_Growth'].tolist()
+                "values": clean_timeline_values,
+                "rolling_avg": clean_rolling_avg,
+                "mom_growth": clean_mom_growth
             },
             "segment_distribution": segment_data,
             "seasonality": seasonality,
             "projections": projections,
-            "anomalies": anomalies[:10]  # Cap at top 10 relevant anomalies
+            "anomalies": anomalies[:10]
         }
