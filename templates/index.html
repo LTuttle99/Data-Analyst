@@ -14,31 +14,29 @@
             <div class="h-8 w-8 rounded bg-teal-500 flex items-center justify-center font-bold text-slate-950">B</div>
             <h1 class="text-xl font-semibold tracking-wide text-white">BookOfBusiness<span class="text-teal-400 font-normal">.io</span></h1>
         </div>
-        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">Operational Module Engine</div>
+        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">Data Horizon: 2022+</div>
     </header>
 
     <main class="max-w-7xl mx-auto p-6 space-y-8">
         
-        <section id="upload-card" class="bg-slate-950 border border-slate-800 rounded-xl p-8 max-w-xl mx-auto shadow-2xl transition-all duration-300">
+        <section id="upload-card" class="bg-slate-950 border border-slate-800 rounded-xl p-8 max-w-xl mx-auto shadow-2xl">
             <h2 class="text-lg font-medium text-white mb-2">Initialize Book Portfolio Analysis</h2>
-            <p class="text-sm text-slate-400 mb-6">Drop your standard portfolio ledger export (.csv, .xlsx) below. The engine will inspect formatting structures automatically.</p>
+            <p class="text-sm text-slate-400 mb-6">Upload ledger records. Analysis automatically scopes from calendar year 2022 onward.</p>
             
             <div class="border-2 border-dashed border-slate-700 hover:border-teal-500 rounded-lg p-8 text-center cursor-pointer bg-slate-900/50 transition-colors group" id="drop-zone">
                 <input type="file" id="file-input" class="hidden" accept=".csv, .xlsx, .xls">
-                <svg class="mx-auto h-12 w-12 text-slate-500 group-hover:text-teal-400 mb-3 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="mx-auto h-12 w-12 text-slate-500 group-hover:text-teal-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <p class="text-sm font-medium text-slate-300">Select file path from device workspace</p>
-                <p class="text-xs text-slate-500 mt-1">Supports standard relational tracking parameters</p>
             </div>
         </section>
 
         <section id="mapping-card" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-8 max-w-xl mx-auto shadow-2xl">
             <h3 class="text-lg font-medium text-white mb-2">Verify Schema Assertions</h3>
-            <p class="text-sm text-slate-400 mb-6">Confirm or recalibrate parsed structural definitions before generating aggregate indices.</p>
+            <p class="text-sm text-slate-400 mb-6">Confirm parsed structural mappings, specifically targeting your dynamic fields.</p>
             
-            <div class="space-y-4" id="mapping-selectors">
-                </div>
+            <div class="space-y-4" id="mapping-selectors"></div>
 
             <button onclick="submitMapping()" class="w-full mt-6 bg-teal-500 hover:bg-teal-400 text-slate-950 text-sm font-semibold py-3 px-4 rounded-lg shadow transition-colors">
                 Run Pipeline Execution
@@ -47,56 +45,78 @@
 
         <div id="workspace-dashboard" class="hidden space-y-8">
             
+            <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-6 items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Profit Center Slice</label>
+                        <select id="filter-profit-center" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[180px]">
+                            <option value="ALL">All Profit Centers combined</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 text-right">Analytical Unit Core Metric</label>
+                    <div class="inline-flex rounded-lg border border-slate-700 p-0.5 bg-slate-900">
+                        <button id="toggle-metric-premium" onclick="setMetricTarget('premium')" class="px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors">
+                            Premium Volume ($)
+                        </button>
+                        <button id="toggle-metric-count" onclick="setMetricTarget('count')" class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors">
+                            Policy Count (#)
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Book Premium Volume</p>
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Book Premium (2022+)</p>
                     <p class="text-3xl font-bold text-white mt-2 tracking-tight" id="kpi-premium">$0.00</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Unique Accounts</p>
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Unique Accounts (2022+)</p>
                     <p class="text-3xl font-bold text-teal-400 mt-2 tracking-tight" id="kpi-accounts">0</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure Premium Size</p>
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure Size</p>
                     <p class="text-3xl font-bold text-white mt-2 tracking-tight" id="kpi-avg-size">$0.00</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Historical Revenue Premium Timeline & Moving Window</h4>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-trend">Historical Core Metric Timeline</h4>
                     <div class="h-72"><canvas id="trendChart"></canvas></div>
                 </div>
                 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Segment Dynamic Allocation Share</h4>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-segment">Segment Performance Share</h4>
                     <div class="h-72"><canvas id="segmentChart"></canvas></div>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Linear Model Baseline Projections (Next 12 Months)</h4>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-projection">Trend Projection Matrix (Next 12 Months)</h4>
                     <div class="h-72"><canvas id="projectionChart"></canvas></div>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Historical Performance Seasonality Profile</h4>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-season">Seasonality Profile Variance</h4>
                     <div class="h-72"><canvas id="seasonalityChart"></canvas></div>
                 </div>
             </div>
 
             <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
-                <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Variance Detection & Potential Anomaly Flags</h4>
+                <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Variance Detection & Outliers (Filtered Parameters)</h4>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
-                            <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                            <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
                                 <th class="pb-3 pl-4">Account Reference Pointer</th>
-                                <th class="pb-3">Financial Value Magnitude</th>
-                                <th class="pb-3 pr-4">Categorization / Root Cause Reason</th>
+                                <th class="pb-3">Financial Premium Value</th>
+                                <th class="pb-3 pr-4">Categorization / Status Exception</th>
                             </tr>
                         </thead>
-                        <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300">
-                            </tbody>
+                        <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
                     </table>
                 </div>
             </section>
@@ -110,6 +130,8 @@
         
         let allColumns = [];
         let activeCharts = {};
+        let activeMapping = {};
+        let currentMetricTarget = "premium";
 
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
@@ -122,14 +144,22 @@
             try {
                 const response = await fetch('/api/upload', { method: 'POST', body: formData });
                 const data = await response.json();
-                
                 if (data.error) throw new Error(data.error);
 
                 allColumns = data.columns;
+                populateProfitCenterDropdown(data.profit_centers);
                 renderMappingSelectors(data.inferred_mapping);
             } catch (err) {
-                alert("File Parsing Pipeline Exception: " + err.message);
+                alert("Pipeline File Exception: " + err.message);
             }
+        }
+
+        function populateProfitCenterDropdown(profitCenters) {
+            const dropdown = document.getElementById('filter-profit-center');
+            dropdown.innerHTML = '<option value="ALL">All Profit Centers combined</option>';
+            profitCenters.forEach(pc => {
+                dropdown.innerHTML += `<option value="${pc}">${pc}</option>`;
+            });
         }
 
         function renderMappingSelectors(inferred) {
@@ -140,6 +170,7 @@
             const fields = [
                 { id: 'financial_metric', label: 'Financial Revenue Core Field' },
                 { id: 'timeline_metric', label: 'Timeline Index Dimension' },
+                { id: 'profit_center', label: 'Profit Center Grouping Field' },
                 { id: 'categorical_segment', label: 'Portfolio Slice Categorization (Broker/LOB)' },
                 { id: 'client_id', label: 'Account Identity Field' }
             ];
@@ -152,7 +183,7 @@
                 target.innerHTML += `
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">${field.label}</label>
-                        <select id="map-${field.id}" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                        <select id="map-${field.id}" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:border-teal-500">
                             ${optionsHtml}
                         </select>
                     </div>
@@ -162,40 +193,69 @@
             document.getElementById('mapping-card').classList.remove('hidden');
         }
 
-        async function submitMapping() {
-            const mapping = {
+        function setMetricTarget(target) {
+            currentMetricTarget = target;
+            const btnPremium = document.getElementById('toggle-metric-premium');
+            const btnCount = document.getElementById('toggle-metric-count');
+
+            if (target === 'premium') {
+                btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
+                btnCount.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
+            } else {
+                btnCount.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
+                btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
+            }
+            triggerUpdate();
+        }
+
+        function submitMapping() {
+            activeMapping = {
                 financial_metric: document.getElementById('map-financial_metric').value,
                 timeline_metric: document.getElementById('map-timeline_metric').value,
+                profit_center: document.getElementById('map-profit_center').value,
                 categorical_segment: document.getElementById('map-categorical_segment').value,
                 client_id: document.getElementById('map-client_id').value
             };
+            document.getElementById('mapping-card').classList.add('hidden');
+            document.getElementById('workspace-dashboard').classList.remove('hidden');
+            triggerUpdate();
+        }
+
+        async function triggerUpdate() {
+            const selectedPC = document.getElementById('filter-profit-center').value;
+            
+            // Adjust label strings dynamically based on metric context
+            const unitLabel = currentMetricTarget === "premium" ? "Premium ($)" : "Policy Count (#)";
+            document.getElementById('title-trend').innerText = `Historical ${unitLabel} Monthly Trend`;
+            document.getElementById('title-segment').innerText = `Segment Allocation Performance (${unitLabel})`;
+            document.getElementById('title-projection').innerText = `Expected 12-Month ${unitLabel} Model Projections`;
+            document.getElementById('title-season').innerText = `Average Yearly Seasonality Profile (${unitLabel})`;
 
             try {
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mapping })
+                    body: JSON.stringify({ 
+                        mapping: activeMapping,
+                        profit_center: selectedPC,
+                        projection_target: currentMetricTarget
+                    })
                 });
                 const analysisResults = await response.json();
-                
                 if (analysisResults.error) throw new Error(analysisResults.error);
 
                 displayDashboard(analysisResults);
             } catch (err) {
-                alert("Analytical Processing Execution Interruption: " + err.message);
+                alert("Analytical Refresh Exception: " + err.message);
             }
         }
 
         function displayDashboard(res) {
-            document.getElementById('mapping-card').classList.add('hidden');
-            document.getElementById('workspace-dashboard').classList.remove('hidden');
-
-            // Format KPIs
+            // Update Base Static KPIs
             document.getElementById('kpi-premium').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.total_premium);
             document.getElementById('kpi-accounts').innerText = res.kpis.total_accounts.toLocaleString();
             document.getElementById('kpi-avg-size').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.avg_account_size);
 
-            // Populate Anomalies Table
             const tableBody = document.getElementById('anomaly-table-rows');
             tableBody.innerHTML = res.anomalies.map(item => `
                 <tr class="hover:bg-slate-900/40 font-mono text-xs">
@@ -206,10 +266,9 @@
             `).join('');
 
             if (res.anomalies.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">No unusual historical volatility points observed in standard bounds.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">No variations identified within current configuration parameters.</td></tr>`;
             }
 
-            // Chart Rendering Pipeline
             renderTrendChart(res.historical_timeline);
             renderSegmentChart(res.segment_distribution);
             renderProjectionChart(res.projections);
@@ -217,20 +276,19 @@
         }
 
         function initChartInstance(ctxId, configuration) {
-            if (activeCharts[ctxId]) {
-                activeCharts[ctxId].destroy();
-            }
+            if (activeCharts[ctxId]) activeCharts[ctxId].destroy();
             const ctx = document.getElementById(ctxId).getContext('2d');
             activeCharts[ctxId] = new Chart(ctx, configuration);
         }
 
         function renderTrendChart(timeline) {
+            const labelStr = currentMetricTarget === "premium" ? 'Observed Monthly Premium' : 'Observed Policy Count';
             initChartInstance('trendChart', {
                 type: 'line',
                 data: {
                     labels: timeline.labels,
                     datasets: [
-                        { label: 'Observed Periodic Premium', data: timeline.values, borderColor: '#14b8a6', backgroundColor: 'rgba(20, 184, 166, 0.1)', fill: true, tension: 0.1 },
+                        { label: labelStr, data: timeline.values, borderColor: '#14b8a6', backgroundColor: 'rgba(20, 184, 166, 0.1)', fill: true, tension: 0.1 },
                         { label: '3-Period Rolling Mean', data: timeline.rolling_avg, borderColor: '#3b82f6', borderDash: [5, 5], fill: false, tension: 0.1 }
                     ]
                 },
@@ -243,7 +301,7 @@
                 type: 'bar',
                 data: {
                     labels: Object.keys(distribution),
-                    datasets: [{ label: 'Aggregate Ledger Volume', data: Object.values(distribution), backgroundColor: '#3b82f6' }]
+                    datasets: [{ label: 'Metric Volume Split', data: Object.values(distribution), backgroundColor: '#3b82f6' }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
             });
@@ -254,7 +312,7 @@
                 type: 'line',
                 data: {
                     labels: proj.map(p => p.period),
-                    datasets: [{ label: 'Expected Linear Baseline', data: proj.map(p => p.projected_value), borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2 }]
+                    datasets: [{ label: 'Expected Linear Baseline Model', data: proj.map(p => p.projected_value), borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2 }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#94a3b8' } } } }
             });
@@ -269,7 +327,7 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{ label: 'Mean Periodic Concentration', data: data, borderColor: '#e2e8f0', tension: 0.3 }]
+                    datasets: [{ label: 'Mean Distribution Core Concentration', data: data, borderColor: '#e2e8f0', tension: 0.3 }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
             });
