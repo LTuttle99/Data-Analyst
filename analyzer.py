@@ -13,7 +13,7 @@ class BookOfBusinessAnalyzer:
         else:
             raise ValueError("Unsupported file format. Please upload CSV or Excel.")
         
-        # Clean string columns to prevent trailing spaces
+        # Clean string columns to prevent trailing spaces and handle empty fields safely
         self.df = self.df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
     def infer_schema(self) -> dict:
@@ -78,10 +78,12 @@ class BookOfBusinessAnalyzer:
             cat_cols = self.df.select_dtypes(include=['object', 'category']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        # Extract unique profit centers for frontend filtering dropdown initialization
+        # Extract unique profit centers safely handling any internal NaN fields
         unique_profit_centers = []
         if schema["profit_center"] and schema["profit_center"] in self.df.columns:
-            unique_profit_centers = sorted(self.df[schema["profit_center"]].dropna().unique().astype(str).tolist())
+            unique_profit_centers = sorted(
+                self.df[schema["profit_center"]].dropna().astype(str).unique().tolist()
+            )
 
         return {
             "columns": columns, 
@@ -107,6 +109,11 @@ class BookOfBusinessAnalyzer:
         working_df[time_col] = pd.to_datetime(working_df[time_col], errors='coerce')
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
         working_df = working_df.dropna(subset=[time_col])
+
+        # Fill potential structural gaps in critical categoricals to prevent grouping breakdowns
+        if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
+        if pc_col: working_df[pc_col] = working_df[pc_col].fillna('Unknown')
+        if id_col: working_df[id_col] = working_df[id_col].fillna('Unknown')
 
         # CRITICAL FILTER: Restrict data analysis scope starting from 2022
         working_df = working_df[working_df[time_col].dt.year >= 2022]
@@ -162,7 +169,7 @@ class BookOfBusinessAnalyzer:
         season_summary = working_df.groupby('MonthName')[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('mean' if projection_target == "premium" else 'nunique')
         seasonality = {k: (float(v) if not np.isinf(v) and not np.isnan(v) else 0.0) for k, v in season_summary.to_dict().items()}
 
-        # 5. Predictive Time-Series Projections (Premium or Policy Count)
+        # 5. Predictive Time-Series Projections
         projections = []
         if len(monthly_df) > 1:
             X = np.arange(len(monthly_df)).reshape(-1, 1)
