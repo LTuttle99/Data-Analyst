@@ -68,7 +68,7 @@ class BookOfBusinessAnalyzer:
         unique_profit_centers = []
         if schema["profit_center"] and schema["profit_center"] in self.df.columns:
             raw_pcs = self.df[schema["profit_center"]].dropna()
-            # If float/int representation, turn back cleanly (e.g. drop trailing .0)
+            # Handle floats and clean decimal conversions safely (e.g. 10.0 -> "10")
             unique_profit_centers = sorted(list(set([str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip() for x in raw_pcs])))
 
         return {
@@ -90,7 +90,7 @@ class BookOfBusinessAnalyzer:
         if not fin_col or not time_col:
             raise ValueError("Financial and Timeline metrics are required fields.")
 
-        # Subset data for memory efficiency
+        # Subset data for performance optimizations
         cols_to_keep = [fin_col, time_col]
         if cat_col: cols_to_keep.append(cat_col)
         if pc_col: cols_to_keep.append(pc_col)
@@ -101,7 +101,7 @@ class BookOfBusinessAnalyzer:
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
         working_df = working_df.dropna(subset=[time_col])
 
-        # Normalize the structural target match array string mappings
+        # Bulletproof casting layer: Clear out formatting discrepancies
         if pc_col:
             working_df[pc_col] = working_df[pc_col].apply(lambda x: str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip())
         if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
@@ -110,7 +110,7 @@ class BookOfBusinessAnalyzer:
         # Core Date Filter: Slice baseline metrics from 2022 onwards
         working_df = working_df[working_df[time_col].dt.year >= 2022]
 
-        # FIX: Bulletproof string matching filter execution
+        # Apply standardized Profit Center parameter filtering matches
         if pc_col and selected_profit_center != "ALL":
             working_df = working_df[working_df[pc_col] == str(selected_profit_center).strip()]
 
@@ -121,26 +121,24 @@ class BookOfBusinessAnalyzer:
                 "segment_distribution": {}, "seasonality": {}, "projections": [], "anomalies": []
             }
 
-        # 1. Broad Portfolio Metrics
+        # 1. High Level Metrics
         total_premium = float(working_df[fin_col].sum())
         total_accounts = int(working_df[id_col].nunique()) if id_col else int(len(working_df))
         avg_account_size = float(working_df[fin_col].mean()) if total_accounts > 0 else 0
 
-        # 2. Portfolio Concentration Index (HHI Science Approach)
-        # HHI < 1500: Healthy/Diversified, > 2500: Dangerous Concentration
+        # 2. Portfolio Concentration Index (HHI Approach)
         hhi_index = 0
-        if cat_col:
+        if cat_col and total_premium > 0:
             shares = working_df.groupby(cat_col)[fin_col].sum()
-            if total_premium > 0:
-                hhi_index = float(sum([(v / total_premium * 100) ** 2 for v in shares]))
+            hhi_index = float(sum([(v / total_premium * 100) ** 2 for v in shares]))
 
-        # 3. Dynamic Retention and Attrition Calculations
+        # 3. Dynamic Year-Over-Year Account Retention Ratios
         working_df['Year'] = working_df[time_col].dt.year
-        retention_rate = 100.0  # Base standard default fallback
+        retention_rate = 100.0
         years_present = sorted(working_df['Year'].unique())
-        if len(years_present) >= 2:
-            prev_year_accounts = set(working_df[working_df['Year'] == years_present[-2]][id_col].unique()) if id_col else set()
-            curr_year_accounts = set(working_df[working_df['Year'] == years_present[-1]][id_col].unique()) if id_col else set()
+        if len(years_present) >= 2 and id_col:
+            prev_year_accounts = set(working_df[working_df['Year'] == years_present[-2]][id_col].unique())
+            curr_year_accounts = set(working_df[working_df['Year'] == years_present[-1]][id_col].unique())
             if prev_year_accounts:
                 retained = prev_year_accounts.intersection(curr_year_accounts)
                 retention_rate = float(len(retained) / len(prev_year_accounts) * 100)
@@ -159,18 +157,18 @@ class BookOfBusinessAnalyzer:
         monthly_df['RollingAvg'] = monthly_df[target_series].rolling(window=3, min_periods=1).mean()
         monthly_df['MoM_Growth'] = monthly_df[target_series].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0) * 100
 
-        # 5. Diversification Segments Split
+        # 5. Segment Distribution Split
         segment_data = {}
         if cat_col:
             seg_summary = working_df.groupby(cat_col)[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('sum' if projection_target == "premium" else 'nunique').sort_values(ascending=False).head(20)
             segment_data = {str(k): float(v) for k, v in seg_summary.items()}
 
-        # 6. Seasonality Metrics
+        # 6. Seasonality Matrix
         working_df['MonthName'] = working_df[time_col].dt.strftime('%B')
         season_summary = working_df.groupby('MonthName')[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('sum' if projection_target == "premium" else 'nunique')
         seasonality = {k: float(v) for k, v in season_summary.to_dict().items()}
 
-        # 7. Advanced Linear Dynamic Modeling
+        # 7. Predictive Time-Series Projections
         projections = []
         if len(monthly_df) > 1:
             X = np.arange(len(monthly_df)).reshape(-1, 1)
@@ -185,7 +183,7 @@ class BookOfBusinessAnalyzer:
                 next_month = (last_date + pd.DateOffset(months=i+1)).strftime('%Y-%m')
                 projections.append({"period": next_month, "projected_value": max(0.0, float(pred))})
 
-        # 8. Outlier Risk Profiling (Flags accounts making up > 5% of entire segment volume)
+        # 8. Concentration Exposure Anomalies (Flags large accounts making up >3% of total book size)
         anomalies = []
         if id_col:
             top_accounts = working_df.groupby(id_col)[fin_col].sum().sort_values(ascending=False).head(10)
@@ -194,7 +192,7 @@ class BookOfBusinessAnalyzer:
                     anomalies.append({
                         "identifier": str(acc_id),
                         "value": float(acc_vol),
-                        "reason": f"High Concentration Exposure Key Risk Indicator ({round(acc_vol/total_premium*100, 1)}% of total volume)"
+                        "reason": f"High Concentration Exposure Outlier Risk ({round(acc_vol/total_premium*100, 1)}% of selected scope portfolio volume)"
                     })
 
         return {
