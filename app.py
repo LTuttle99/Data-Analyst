@@ -1,4 +1,5 @@
 import os
+import traceback
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.requests import Request
@@ -20,7 +21,9 @@ async def upload_file(file: UploadFile = File(...)):
         UPLOADED_FILE_CACHE["current_session"] = analyzer
         return JSONResponse(content=schema)
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+        error_trace = traceback.format_exc()
+        print(error_trace)  # Appears in Render logs
+        return JSONResponse(status_code=400, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
 
 @app.post("/api/analyze")
 async def analyze_data(request: Request):
@@ -32,12 +35,14 @@ async def analyze_data(request: Request):
         
         analyzer = UPLOADED_FILE_CACHE.get("current_session")
         if not analyzer:
-            raise HTTPException(status_code=400, detail="No active session found.")
+            raise HTTPException(status_code=400, detail="No active data file found in session memory.")
             
         results = analyzer.run_analysis(mapping, profit_center, projection_target)
         return JSONResponse(content=results)
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        error_trace = traceback.format_exc()
+        print(error_trace)  # Appears in Render logs
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
@@ -46,7 +51,7 @@ async def serve_dashboard():
         with open(template_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Template index.html missing.")
+        raise HTTPException(status_code=404, detail="Template index.html missing from repository layout structure.")
 
 if __name__ == "__main__":
     import uvicorn
