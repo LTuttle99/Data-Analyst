@@ -19,10 +19,30 @@ class BookOfBusinessAnalyzer:
         for col in self.df.select_dtypes(include=['object']).columns:
             self.df[col] = self.df[col].astype(str).str.strip()
 
+    def _normalize_pc_value(self, x):
+        """Consistent normalization for profit center values across inference,
+        dropdown population, and filtering."""
+        try:
+            if isinstance(x, (float, int)) and not pd.isna(x) and x == int(x):
+                return str(int(x))
+        except (ValueError, TypeError):
+            pass
+        return str(x).strip()
+
+    def get_profit_centers(self, pc_col: str) -> list:
+        """Return unique, normalized profit center values for a specific column.
+        Used to refresh the frontend dropdown when the user changes their
+        profit center mapping."""
+        if not pc_col or pc_col not in self.df.columns:
+            return []
+        raw_pcs = self.df[pc_col].dropna()
+        cleaned = [self._normalize_pc_value(x) for x in raw_pcs]
+        # Remove empty strings and 'nan' artifacts
+        cleaned = [v for v in cleaned if v and v.lower() != 'nan']
+        return sorted(list(set(cleaned)))[:500]
+
     def infer_schema(self) -> dict:
-        """
-        Heuristically identifies column roles based on names and data types.
-        """
+        """Heuristically identifies column roles based on names and data types."""
         schema = {
             "financial_metric": None,
             "timeline_metric": None,
@@ -64,10 +84,8 @@ class BookOfBusinessAnalyzer:
             cat_cols = self.df.select_dtypes(include=['object']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        unique_profit_centers = []
-        if schema["profit_center"] and schema["profit_center"] in self.df.columns:
-            raw_pcs = self.df[schema["profit_center"]].dropna()
-            unique_profit_centers = sorted(list(set([str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip() for x in raw_pcs])))
+        # Use the consistent helper to build the initial profit center list
+        unique_profit_centers = self.get_profit_centers(schema["profit_center"])
 
         return {
             "columns": columns, 
@@ -76,9 +94,7 @@ class BookOfBusinessAnalyzer:
         }
 
     def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL", projection_target: str = "premium") -> dict:
-        """
-        Executes institutional-grade portfolio metrics, diagnostic modeling, and variance calculations.
-        """
+        """Executes institutional-grade portfolio metrics, diagnostic modeling, and variance calculations."""
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
         cat_col = mapping.get("categorical_segment")
@@ -88,29 +104,31 @@ class BookOfBusinessAnalyzer:
         if not fin_col or not time_col:
             raise ValueError("Financial and Timeline metrics are required fields.")
 
-        # Filter active vectors to run lightweight data transforms
         cols_to_keep = [fin_col, time_col]
         if cat_col: cols_to_keep.append(cat_col)
         if pc_col: cols_to_keep.append(pc_col)
         if id_col: cols_to_keep.append(id_col)
+        
+        # Deduplicate cols_to_keep in case of overlaps
+        cols_to_keep = list(dict.fromkeys(cols_to_keep))
         
         working_df = self.df[cols_to_keep].copy()
         working_df[time_col] = pd.to_datetime(working_df[time_col], errors='coerce')
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
         working_df = working_df.dropna(subset=[time_col])
 
-        # Normalize categorical keys safely to prevent parsing omissions
+        # Normalize categorical keys using the SAME helper as the dropdown
         if pc_col:
-            working_df[pc_col] = working_df[pc_col].apply(lambda x: str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip())
+            working_df[pc_col] = working_df[pc_col].apply(self._normalize_pc_value)
         if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
         if id_col: working_df[id_col] = working_df[id_col].fillna('Unknown')
 
-        # Limit tracking context starting from year 2022
         working_df = working_df[working_df[time_col].dt.year >= 2022]
 
         # Explicit absolute filter matching block execution
-        if pc_col and selected_profit_center != "ALL":
-            working_df = working_df[working_df[pc_col] == str(selected_profit_center).strip()]
+        if pc_col and selected_profit_center and str(selected_profit_center).upper() != "ALL":
+            normalized_selection = self._normalize_pc_value(selected_profit_center)
+            working_df = working_df[working_df[pc_col] == normalized_selection]
 
         if working_df.empty:
             return {
@@ -142,8 +160,7 @@ class BookOfBusinessAnalyzer:
                 retained = prev_year_accounts.intersection(curr_year_accounts)
                 retention_rate = float(len(retained) / len(prev_year_accounts) * 100)
 
-        # 4. INSIGHT ADDITION: Pareto 80/20 Rule Volatility Benchmark Calculator
-        # Identifies what % of unique clients make up the top 80% of aggregate income
+        # 4. Pareto 80/20 Rule Volatility Benchmark
         pareto_ratio = 20.0
         if id_col and total_premium > 0:
             account_sums = working_df.groupby(id_col)[fin_col].sum().sort_values(ascending=False)
@@ -152,8 +169,7 @@ class BookOfBusinessAnalyzer:
             top_accounts_count = len(cumulative_sum[cumulative_sum <= cutoff]) + 1
             pareto_ratio = float((top_accounts_count / len(account_sums)) * 100) if len(account_sums) > 0 else 20.0
 
-        # 5. INSIGHT ADDITION: Cohort Vintage Organic Expansion Tracking
-        # Pins accounts to the year they debuted and assesses how their retention metrics scale
+        # 5. Cohort Vintage Organic Expansion Tracking
         vintage_cohorts = {}
         if id_col:
             first_seen = self.df.copy()
@@ -164,7 +180,7 @@ class BookOfBusinessAnalyzer:
             working_df['Vintage'] = working_df[id_col].map(account_birthdays)
             vintage_summary = working_df.groupby(['Vintage', 'Year'])[fin_col if projection_target == "premium" else id_col].agg('sum' if projection_target == "premium" else 'nunique').reset_index()
             
-            for v in vintage_summary['Vintage'].unique():
+            for v in vintage_summary['Vintage'].dropna().unique():
                 v_str = f"Vintage {int(v)}"
                 v_data = vintage_summary[vintage_summary['Vintage'] == v]
                 vintage_cohorts[v_str] = {f"CY_{int(row['Year'])}": float(row[fin_col if projection_target == "premium" else id_col]) for _, row in v_data.iterrows()}
@@ -228,7 +244,7 @@ class BookOfBusinessAnalyzer:
                 "avg_account_size": avg_account_size,
                 "retention_rate": retention_rate,
                 "hhi_index": hhi_index,
-                "pareto_ratio":  pareto_ratio
+                "pareto_ratio": pareto_ratio
             },
             "historical_timeline": {
                 "labels": monthly_df['YearMonthStr'].tolist(),
