@@ -4,6 +4,9 @@ from sklearn.linear_model import LinearRegression
 import io
 from datetime import datetime
 
+# Baseline analytical cutoff. Update this to shift the entire tool's floor date.
+ANALYTICAL_BASELINE = pd.Timestamp("2024-12-01")
+
 class BookOfBusinessAnalyzer:
     def __init__(self, file_bytes: bytes, file_name: str):
         self.file_name = file_name
@@ -21,8 +24,7 @@ class BookOfBusinessAnalyzer:
             self.df[col] = self.df[col].astype(str).str.strip()
 
     def _normalize_categorical_value(self, x):
-        """Consistent normalization for categorical values (profit center, agency code, etc.).
-        Handles integers-stored-as-floats, whitespace, and casing consistently."""
+        """Consistent normalization for categorical values (profit center, agency code, etc.)."""
         try:
             if isinstance(x, (float, int)) and not pd.isna(x) and x == int(x):
                 return str(int(x))
@@ -30,12 +32,10 @@ class BookOfBusinessAnalyzer:
             pass
         return str(x).strip()
 
-    # Backwards-compatible alias so old callers still work
     _normalize_pc_value = _normalize_categorical_value
 
     def get_unique_column_values(self, col: str, limit: int = 500) -> list:
-        """Generic helper to return unique normalized values from any column.
-        Used for both profit center and agency code slicer population."""
+        """Generic helper to return unique normalized values from any column."""
         if not col or col not in self.df.columns:
             return []
         raw = self.df[col].dropna()
@@ -44,20 +44,18 @@ class BookOfBusinessAnalyzer:
         return sorted(list(set(cleaned)))[:limit]
 
     def get_profit_centers(self, pc_col: str) -> list:
-        """Backwards-compat wrapper around the generic helper."""
         return self.get_unique_column_values(pc_col)
 
     def get_agency_codes(self, agency_col: str) -> list:
-        """Return unique normalized agency code values."""
         return self.get_unique_column_values(agency_col)
 
     def get_date_range(self, time_col: str) -> dict:
-        """Return the min/max date bounds for a given timeline column."""
+        """Return the min/max date bounds for a given timeline column, respecting baseline."""
         if not time_col or time_col not in self.df.columns:
             return {"min_date": None, "max_date": None}
         
         parsed = pd.to_datetime(self.df[time_col], errors='coerce').dropna()
-        parsed = parsed[parsed.dt.year >= 2022]
+        parsed = parsed[parsed >= ANALYTICAL_BASELINE]
         
         if parsed.empty:
             return {"min_date": None, "max_date": None}
@@ -88,7 +86,6 @@ class BookOfBusinessAnalyzer:
             if not schema["timeline_metric"] and any(kw in col_lower for kw in ["date", "effective", "renewal", "inception", "year"]):
                 schema["timeline_metric"] = col
                 continue
-            # Agency code inference runs BEFORE profit center to avoid "code" matching profit-center rules
             if not schema["agency_code"] and any(kw in col_lower for kw in ["agency", "agent code", "agency code", "producer code", "office code"]):
                 schema["agency_code"] = col
                 continue
@@ -101,7 +98,7 @@ class BookOfBusinessAnalyzer:
             if not schema["client_id"] and any(kw in col_lower for kw in ["id", "client", "customer", "account", "name"]):
                 schema["client_id"] = col
 
-        # Fallbacks (agency_code intentionally has no fallback - stays None if not detected)
+        # Fallbacks
         if not schema["financial_metric"]:
             num_cols = self.df.select_dtypes(include=[np.number]).columns
             if len(num_cols) > 0: schema["financial_metric"] = num_cols[0]
@@ -115,24 +112,96 @@ class BookOfBusinessAnalyzer:
             cat_cols = self.df.select_dtypes(include=['object']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        unique_profit_centers = self.get_profit_centers(schema["profit_center"])
-        unique_agency_codes = self.get_agency_codes(schema["agency_code"])
-        date_range = self.get_date_range(schema["timeline_metric"])
-
         return {
             "columns": columns, 
             "inferred_mapping": schema,
-            "profit_centers": unique_profit_centers[:100],
-            "agency_codes": unique_agency_codes[:500],
-            "date_range": date_range
+            "profit_centers": self.get_profit_centers(schema["profit_center"])[:100],
+            "agency_codes": self.get_agency_codes(schema["agency_code"])[:500],
+            "date_range": self.get_date_range(schema["timeline_metric"]),
+            "baseline_date": ANALYTICAL_BASELINE.strftime('%Y-%m-%d')
+        }
+
+    def _compute_goal_progress(self, actual_value: float, goal_value: float,
+                                start_date, end_date, goal_period_days: int = 365) -> dict:
+        """Compute pro-rated pacing metrics for the Goal vs Actual gauge.
+        
+        Args:
+            actual_value: The actual metric value (premium sum or policy count)
+            goal_value: The user-defined target
+            start_date: Effective start of the analysis window
+            end_date: Effective end of the analysis window
+            goal_period_days: The denominator for pacing (defaults to 365 = annual)
+        
+        Returns dict with achievement %, expected pace %, gap-to-goal, and projected year-end value.
+        """
+        if not goal_value or goal_value <= 0:
+            return {
+                "goal": 0,
+                "actual": float(actual_value),
+                "achievement_pct": 0,
+                "expected_pct": 0,
+                "gap_to_goal": 0,
+                "projected_year_end": 0,
+                "days_elapsed": 0,
+                "status": "no_goal_set"
+            }
+        
+        try:
+            start = pd.to_datetime(start_date) if start_date else None
+            end = pd.to_datetime(end_date) if end_date else None
+        except Exception:
+            start = end = None
+        
+        # Days elapsed in the analysis window
+        days_elapsed = 0
+        if start and end and end >= start:
+            days_elapsed = max(1, (end - start).days + 1)
+        
+        # Pro-rated expected pacing
+        expected_pct = min(100.0, (days_elapsed / goal_period_days) * 100) if goal_period_days > 0 else 0
+        
+        # Actual achievement
+        achievement_pct = (actual_value / goal_value) * 100 if goal_value > 0 else 0
+        
+        # Gap: positive = surplus, negative = shortfall
+        gap_to_goal = float(actual_value - goal_value)
+        
+        # Projected value if current run rate continues over full goal period
+        projected_year_end = float(actual_value)
+        if days_elapsed > 0 and goal_period_days > 0:
+            daily_rate = actual_value / days_elapsed
+            projected_year_end = float(daily_rate * goal_period_days)
+        
+        # Status classification (compares actual pace vs expected pace)
+        if expected_pct <= 0:
+            status = "no_time_elapsed"
+        else:
+            pace_ratio = achievement_pct / expected_pct
+            if pace_ratio >= 1.0:
+                status = "ahead"
+            elif pace_ratio >= 0.8:
+                status = "on_pace"
+            else:
+                status = "behind"
+        
+        return {
+            "goal": float(goal_value),
+            "actual": float(actual_value),
+            "achievement_pct": float(achievement_pct),
+            "expected_pct": float(expected_pct),
+            "gap_to_goal": gap_to_goal,
+            "projected_year_end": projected_year_end,
+            "days_elapsed": int(days_elapsed),
+            "status": status
         }
 
     def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL",
                      projection_target: str = "premium",
                      start_date: str = None, end_date: str = None,
                      include_future_dates: bool = False,
-                     selected_agency_codes: list = None) -> dict:
-        """Executes portfolio metrics with all applied slicers."""
+                     selected_agency_codes: list = None,
+                     goal_value: float = 0) -> dict:
+        """Executes portfolio metrics with all applied slicers and optional goal tracking."""
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
         cat_col = mapping.get("categorical_segment")
@@ -162,8 +231,8 @@ class BookOfBusinessAnalyzer:
         if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
         if id_col: working_df[id_col] = working_df[id_col].fillna('Unknown')
 
-        # Baseline 2022 analytical cutoff
-        working_df = working_df[working_df[time_col].dt.year >= 2022]
+        # Baseline cutoff (December 2024 onward)
+        working_df = working_df[working_df[time_col] >= ANALYTICAL_BASELINE]
 
         # Future Effective Date toggle
         future_records_removed = 0
@@ -176,35 +245,41 @@ class BookOfBusinessAnalyzer:
             working_df = working_df[~future_mask]
 
         # Date range slicer
+        effective_start = None
+        effective_end = None
         if start_date:
             try:
                 start_dt = pd.to_datetime(start_date, errors='coerce')
                 if pd.notna(start_dt):
                     working_df = working_df[working_df[time_col] >= start_dt]
+                    effective_start = start_dt
             except Exception:
                 pass
         if end_date:
             try:
                 end_dt = pd.to_datetime(end_date, errors='coerce')
                 if pd.notna(end_dt):
-                    end_dt = end_dt + pd.Timedelta(hours=23, minutes=59, seconds=59)
-                    working_df = working_df[working_df[time_col] <= end_dt]
+                    end_capped = end_dt + pd.Timedelta(hours=23, minutes=59, seconds=59)
+                    working_df = working_df[working_df[time_col] <= end_capped]
+                    effective_end = end_dt
             except Exception:
                 pass
+
+        # Fallback to actual data bounds if not provided
+        if effective_start is None and not working_df.empty:
+            effective_start = working_df[time_col].min()
+        if effective_end is None and not working_df.empty:
+            effective_end = working_df[time_col].max()
 
         # Profit center slicer
         if pc_col and selected_profit_center and str(selected_profit_center).upper() != "ALL":
             normalized_selection = self._normalize_categorical_value(selected_profit_center)
             working_df = working_df[working_df[pc_col] == normalized_selection]
 
-        # NEW: Agency code multi-select slicer
-        # If a non-empty list is provided, filter to those codes only.
-        # An empty list or None means "all agency codes."
+        # Agency code multi-select slicer
         agency_codes_applied = 0
         if agency_col and selected_agency_codes and len(selected_agency_codes) > 0:
-            normalized_selections = [
-                self._normalize_categorical_value(code) for code in selected_agency_codes
-            ]
+            normalized_selections = [self._normalize_categorical_value(c) for c in selected_agency_codes]
             working_df = working_df[working_df[agency_col].isin(normalized_selections)]
             agency_codes_applied = len(normalized_selections)
 
@@ -214,6 +289,7 @@ class BookOfBusinessAnalyzer:
                 "historical_timeline": {"labels": [], "values": [], "rolling_avg": [], "mom_growth": []},
                 "segment_distribution": {}, "seasonality": {}, "projections": [], "anomalies": [],
                 "vintage_cohorts": {},
+                "goal_progress": self._compute_goal_progress(0, goal_value, effective_start, effective_end),
                 "diagnostics": {
                     "future_records_removed": future_records_removed,
                     "future_dollar_amount": future_dollar_amount,
@@ -321,6 +397,13 @@ class BookOfBusinessAnalyzer:
                         "reason": f"High Concentration Exposure Outlier Risk ({round(acc_vol/total_premium*100, 1)}% of total selected folder scope)"
                     })
 
+        # 11. Goal vs Actual pacing calculation
+        actual_for_goal = total_premium if projection_target == "premium" else total_accounts
+        goal_progress = self._compute_goal_progress(
+            actual_for_goal, goal_value, effective_start, effective_end
+        )
+        goal_progress["metric_type"] = projection_target
+
         return {
             "kpis": {
                 "total_premium": total_premium,
@@ -341,6 +424,7 @@ class BookOfBusinessAnalyzer:
             "projections": projections,
             "anomalies": anomalies,
             "vintage_cohorts": vintage_cohorts,
+            "goal_progress": goal_progress,
             "diagnostics": {
                 "future_records_removed": future_records_removed,
                 "future_dollar_amount": future_dollar_amount,
