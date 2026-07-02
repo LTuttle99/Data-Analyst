@@ -40,7 +40,6 @@ async def refresh_profit_centers(request: Request):
 
 @app.post("/api/agency-codes")
 async def refresh_agency_codes(request: Request):
-    """Return unique agency code values for a given column, refreshed after mapping confirmation."""
     try:
         body = await request.json()
         agency_col = body.get("agency_code_column")
@@ -79,6 +78,13 @@ async def analyze_data(request: Request):
         include_future_dates = bool(body.get("include_future_dates", False))
         selected_agency_codes = body.get("selected_agency_codes", []) or []
         
+        # Parse goal safely
+        goal_raw = body.get("goal_value", 0)
+        try:
+            goal_value = float(goal_raw) if goal_raw not in (None, "", "null") else 0.0
+        except (ValueError, TypeError):
+            goal_value = 0.0
+        
         analyzer = UPLOADED_FILE_CACHE.get("current_session")
         if not analyzer:
             raise HTTPException(status_code=400, detail="No active data file found in session memory.")
@@ -86,7 +92,7 @@ async def analyze_data(request: Request):
         results = analyzer.run_analysis(
             mapping, profit_center, projection_target,
             start_date, end_date, include_future_dates,
-            selected_agency_codes
+            selected_agency_codes, goal_value
         )
         return JSONResponse(content=results)
     except Exception as e:
