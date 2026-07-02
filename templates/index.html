@@ -14,7 +14,7 @@
             <div class="h-8 w-8 rounded bg-teal-500 flex items-center justify-center font-bold text-slate-950">B</div>
             <h1 class="text-xl font-semibold tracking-wide text-white">BookOfBusiness<span class="text-teal-400 font-normal">.io</span></h1>
         </div>
-        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">Data Horizon: 2022+</div>
+        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">Advanced Analytics Hub</div>
     </header>
 
     <main class="max-w-7xl mx-auto p-6 space-y-8">
@@ -50,15 +50,15 @@
             <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-6 items-center justify-between">
                 <div class="flex items-center space-x-4">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Profit Center Slice</label>
-                        <select id="filter-profit-center" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[180px]">
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Profit Center Filter</label>
+                        <select id="filter-profit-center" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[200px]">
                             <option value="ALL">All Profit Centers combined</option>
                         </select>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 text-right">Analytical Unit Core Metric</label>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 text-right">Analytical Forecast Vector</label>
                     <div class="inline-flex rounded-lg border border-slate-700 p-0.5 bg-slate-900">
                         <button id="toggle-metric-premium" onclick="setMetricTarget('premium')" class="px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors">
                             Premium Volume ($)
@@ -70,18 +70,26 @@
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Book Premium (2022+)</p>
-                    <p class="text-3xl font-bold text-white mt-2 tracking-tight" id="kpi-premium">$0.00</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Premium</p>
+                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0.00</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Unique Accounts (2022+)</p>
-                    <p class="text-3xl font-bold text-teal-400 mt-2 tracking-tight" id="kpi-accounts">0</p>
+                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Count</p>
+                    <p class="text-2xl font-bold text-teal-400 mt-1 tracking-tight" id="kpi-accounts">0</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure Size</p>
-                    <p class="text-3xl font-bold text-white mt-2 tracking-tight" id="kpi-avg-size">$0.00</p>
+                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure</p>
+                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0.00</p>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Account Retention Ratio</p>
+                    <p class="text-2xl font-bold text-emerald-400 mt-1 tracking-tight" id="kpi-retention">0.0%</p>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Concentration HHI Index</p>
+                    <p class="text-2xl font-bold text-amber-400 mt-1 tracking-tight" id="kpi-hhi">0</p>
                 </div>
             </div>
 
@@ -108,14 +116,14 @@
             </div>
 
             <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
-                <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4">Variance Detection & Outliers</h4>
+                <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">Key Risk Exposures & Book Concentration Outliers</h4>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
                             <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
-                                <th class="pb-3 pl-4">Account Reference Pointer</th>
-                                <th class="pb-3">Financial Premium Value</th>
-                                <th class="pb-3 pr-4">Categorization / Status Exception</th>
+                                <th class="pb-3 pl-4">Account Reference Identifier</th>
+                                <th class="pb-3">Aggregate Financial Concentration Size</th>
+                                <th class="pb-3 pr-4">Risk Variance Reason</th>
                             </tr>
                         </thead>
                         <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
@@ -142,10 +150,9 @@
         async function handleFile(file) {
             if (!file) return;
             
-            // Show loading state in upload zone
             uploadStatus.innerHTML = `
                 <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-teal-400 rounded-full mb-2"></div>
-                <p class="text-sm text-slate-300">Parsing portfolio ledger schema... Please wait.</p>
+                <p class="text-sm text-slate-300">Compiling ledger metadata vectors... Please wait.</p>
             `;
 
             const formData = new FormData();
@@ -153,7 +160,7 @@
 
             try {
                 const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error("Server rejected or timed out handling file schema.");
+                if (!response.ok) throw new Error("Server communication break down during ingestion.");
                 
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
@@ -162,7 +169,7 @@
                 populateProfitCenterDropdown(data.profit_centers);
                 renderMappingSelectors(data.inferred_mapping);
             } catch (err) {
-                alert("Upload Interrupted: " + err.message);
+                alert("Upload Pipeline Fault: " + err.message);
                 resetUploadZone();
             }
         }
@@ -267,7 +274,7 @@
                         projection_target: currentMetricTarget
                     })
                 });
-                if (!response.ok) throw new Error("Analysis execution pipeline encountered an exception.");
+                if (!response.ok) throw new Error("Engine threw an error processing metrics array matrix.");
                 
                 const analysisResults = await response.json();
                 if (analysisResults.error) throw new Error(analysisResults.error);
@@ -282,18 +289,20 @@
             document.getElementById('kpi-premium').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.total_premium);
             document.getElementById('kpi-accounts').innerText = res.kpis.total_accounts.toLocaleString();
             document.getElementById('kpi-avg-size').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.avg_account_size);
+            document.getElementById('kpi-retention').innerText = res.kpis.retention_rate.toFixed(1) + "%";
+            document.getElementById('kpi-hhi').innerText = Math.round(res.kpis.hhi_index).toLocaleString();
 
             const tableBody = document.getElementById('anomaly-table-rows');
             if (res.anomalies && res.anomalies.length > 0) {
                 tableBody.innerHTML = res.anomalies.map(item => `
                     <tr class="hover:bg-slate-900/40 font-mono text-xs">
                         <td class="py-3 pl-4 text-slate-200">${item.identifier}</td>
-                        <td class="py-3 text-amber-400 font-semibold">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.value)}</td>
+                        <td class="py-3 text-red-400 font-semibold">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.value)}</td>
                         <td class="py-3 text-slate-400 pr-4">${item.reason}</td>
                     </tr>
                 `).join('');
             } else {
-                tableBody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">No variations identified within current configuration parameters.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">No heavy account concentration variances observed within selected profile constraints.</td></tr>`;
             }
 
             renderTrendChart(res.historical_timeline);
@@ -330,26 +339,22 @@
         }
 
         function renderSegmentChart(distribution) {
-            const keys = distribution ? Object.keys(distribution) : [];
-            const vals = distribution ? Object.values(distribution) : [];
             initChartInstance('segmentChart', {
                 type: 'bar',
                 data: {
-                    labels: keys,
-                    datasets: [{ label: 'Metric Volume Split', data: vals, backgroundColor: '#3b82f6' }]
+                    labels: distribution ? Object.keys(distribution) : [],
+                    datasets: [{ label: 'Metric Volume Split', data: distribution ? Object.values(distribution) : [], backgroundColor: '#3b82f6' }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
             });
         }
 
         function renderProjectionChart(proj) {
-            const labels = proj ? proj.map(p => p.period) : [];
-            const vals = proj ? proj.map(p => p.projected_value) : [];
             initChartInstance('projectionChart', {
                 type: 'line',
                 data: {
-                    labels: labels,
-                    datasets: [{ label: 'Expected Linear Baseline Model', data: vals, borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2 }]
+                    labels: proj ? proj.map(p => p.period) : [],
+                    datasets: [{ label: 'Expected Linear Baseline Model', data: proj ? proj.map(p => p.projected_value) : [], borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2 }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#94a3b8' } } } }
             });
