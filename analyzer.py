@@ -30,16 +30,31 @@ class BookOfBusinessAnalyzer:
         return str(x).strip()
 
     def get_profit_centers(self, pc_col: str) -> list:
-        """Return unique, normalized profit center values for a specific column.
-        Used to refresh the frontend dropdown when the user changes their
-        profit center mapping."""
+        """Return unique, normalized profit center values for a specific column."""
         if not pc_col or pc_col not in self.df.columns:
             return []
         raw_pcs = self.df[pc_col].dropna()
         cleaned = [self._normalize_pc_value(x) for x in raw_pcs]
-        # Remove empty strings and 'nan' artifacts
         cleaned = [v for v in cleaned if v and v.lower() != 'nan']
         return sorted(list(set(cleaned)))[:500]
+
+    def get_date_range(self, time_col: str) -> dict:
+        """Return the min/max date bounds for a given timeline column.
+        Respects the 2022+ analytical cutoff. Used to initialize the date slicer
+        on the frontend with sensible defaults."""
+        if not time_col or time_col not in self.df.columns:
+            return {"min_date": None, "max_date": None}
+        
+        parsed = pd.to_datetime(self.df[time_col], errors='coerce').dropna()
+        parsed = parsed[parsed.dt.year >= 2022]
+        
+        if parsed.empty:
+            return {"min_date": None, "max_date": None}
+        
+        return {
+            "min_date": parsed.min().strftime('%Y-%m-%d'),
+            "max_date": parsed.max().strftime('%Y-%m-%d')
+        }
 
     def infer_schema(self) -> dict:
         """Heuristically identifies column roles based on names and data types."""
@@ -84,17 +99,20 @@ class BookOfBusinessAnalyzer:
             cat_cols = self.df.select_dtypes(include=['object']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        # Use the consistent helper to build the initial profit center list
         unique_profit_centers = self.get_profit_centers(schema["profit_center"])
+        date_range = self.get_date_range(schema["timeline_metric"])
 
         return {
             "columns": columns, 
             "inferred_mapping": schema,
-            "profit_centers": unique_profit_centers[:100]
+            "profit_centers": unique_profit_centers[:100],
+            "date_range": date_range
         }
 
-    def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL", projection_target: str = "premium") -> dict:
-        """Executes institutional-grade portfolio metrics, diagnostic modeling, and variance calculations."""
+    def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL",
+                     projection_target: str = "premium",
+                     start_date: str = None, end_date: str = None) -> dict:
+        """Executes institutional-grade portfolio metrics with optional date range filtering."""
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
         cat_col = mapping.get("categorical_segment")
@@ -108,8 +126,6 @@ class BookOfBusinessAnalyzer:
         if cat_col: cols_to_keep.append(cat_col)
         if pc_col: cols_to_keep.append(pc_col)
         if id_col: cols_to_keep.append(id_col)
-        
-        # Deduplicate cols_to_keep in case of overlaps
         cols_to_keep = list(dict.fromkeys(cols_to_keep))
         
         working_df = self.df[cols_to_keep].copy()
@@ -117,15 +133,33 @@ class BookOfBusinessAnalyzer:
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
         working_df = working_df.dropna(subset=[time_col])
 
-        # Normalize categorical keys using the SAME helper as the dropdown
         if pc_col:
             working_df[pc_col] = working_df[pc_col].apply(self._normalize_pc_value)
         if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
         if id_col: working_df[id_col] = working_df[id_col].fillna('Unknown')
 
+        # Baseline 2022 analytical cutoff (always applied)
         working_df = working_df[working_df[time_col].dt.year >= 2022]
 
-        # Explicit absolute filter matching block execution
+        # Date range slicer filtering (only applied if user picked dates)
+        if start_date:
+            try:
+                start_dt = pd.to_datetime(start_date, errors='coerce')
+                if pd.notna(start_dt):
+                    working_df = working_df[working_df[time_col] >= start_dt]
+            except Exception:
+                pass  # silently ignore malformed dates, keep full range
+        if end_date:
+            try:
+                end_dt = pd.to_datetime(end_date, errors='coerce')
+                if pd.notna(end_dt):
+                    # Include the full end day (up to 23:59:59)
+                    end_dt = end_dt + pd.Timedelta(hours=23, minutes=59, seconds=59)
+                    working_df = working_df[working_df[time_col] <= end_dt]
+            except Exception:
+                pass
+
+        # Profit center slicer filtering
         if pc_col and selected_profit_center and str(selected_profit_center).upper() != "ALL":
             normalized_selection = self._normalize_pc_value(selected_profit_center)
             working_df = working_df[working_df[pc_col] == normalized_selection]
@@ -143,7 +177,7 @@ class BookOfBusinessAnalyzer:
         total_accounts = int(working_df[id_col].nunique()) if id_col else int(len(working_df))
         avg_account_size = float(working_df[fin_col].mean()) if total_accounts > 0 else 0
 
-        # 2. Portfolio Concentration Index (HHI Calculation Matrix)
+        # 2. Portfolio Concentration Index (HHI Calculation)
         hhi_index = 0
         if cat_col and total_premium > 0:
             shares = working_df.groupby(cat_col)[fin_col].sum()
@@ -225,7 +259,7 @@ class BookOfBusinessAnalyzer:
                 next_month = (last_date + pd.DateOffset(months=i+1)).strftime('%Y-%m')
                 projections.append({"period": next_month, "projected_value": max(0.0, float(pred))})
 
-        # 10. Risk Profiles & Concentration Anomalies Log
+        # 10. Risk Profiles & Concentration Anomalies
         anomalies = []
         if id_col:
             top_accounts = working_df.groupby(id_col)[fin_col].sum().sort_values(ascending=False).head(10)
