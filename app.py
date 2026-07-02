@@ -22,8 +22,28 @@ async def upload_file(file: UploadFile = File(...)):
         return JSONResponse(content=schema)
     except Exception as e:
         error_trace = traceback.format_exc()
-        print(error_trace)  # Appears in Render logs
+        print(error_trace)
         return JSONResponse(status_code=400, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
+
+@app.post("/api/profit-centers")
+async def refresh_profit_centers(request: Request):
+    """Returns the unique profit center values for a specific column.
+    Called by the frontend after the user confirms their schema mapping,
+    to ensure the slicer reflects the actual column they selected."""
+    try:
+        body = await request.json()
+        pc_col = body.get("profit_center_column")
+        
+        analyzer = UPLOADED_FILE_CACHE.get("current_session")
+        if not analyzer:
+            raise HTTPException(status_code=400, detail="No active data file found in session memory.")
+        
+        pcs = analyzer.get_profit_centers(pc_col)
+        return JSONResponse(content={"profit_centers": pcs})
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
 
 @app.post("/api/analyze")
 async def analyze_data(request: Request):
@@ -41,7 +61,7 @@ async def analyze_data(request: Request):
         return JSONResponse(content=results)
     except Exception as e:
         error_trace = traceback.format_exc()
-        print(error_trace)  # Appears in Render logs
+        print(error_trace)
         return JSONResponse(status_code=500, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
 
 @app.get("/", response_class=HTMLResponse)
