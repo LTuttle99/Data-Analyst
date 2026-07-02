@@ -14,7 +14,7 @@ class BookOfBusinessAnalyzer:
         else:
             raise ValueError("Unsupported file format. Please upload CSV or Excel.")
         
-        # Strip string columns globally and normalize header tokens
+        # Globally normalize string formats and spaces
         self.df.columns = [str(c).strip() for c in self.df.columns]
         for col in self.df.select_dtypes(include=['object']).columns:
             self.df[col] = self.df[col].astype(str).str.strip()
@@ -64,11 +64,9 @@ class BookOfBusinessAnalyzer:
             cat_cols = self.df.select_dtypes(include=['object']).columns
             if len(cat_cols) > 0: schema["categorical_segment"] = cat_cols[0]
 
-        # Bulletproof Profit Center Extractor: Strip nulls and normalize out string representations
         unique_profit_centers = []
         if schema["profit_center"] and schema["profit_center"] in self.df.columns:
             raw_pcs = self.df[schema["profit_center"]].dropna()
-            # Handle floats and clean decimal conversions safely (e.g. 10.0 -> "10")
             unique_profit_centers = sorted(list(set([str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip() for x in raw_pcs])))
 
         return {
@@ -79,7 +77,7 @@ class BookOfBusinessAnalyzer:
 
     def run_analysis(self, mapping: dict, selected_profit_center: str = "ALL", projection_target: str = "premium") -> dict:
         """
-        Executes advanced, institutional financial accounting analytics over the 5,200+ row ledger.
+        Executes institutional-grade portfolio metrics, diagnostic modeling, and variance calculations.
         """
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
@@ -90,7 +88,7 @@ class BookOfBusinessAnalyzer:
         if not fin_col or not time_col:
             raise ValueError("Financial and Timeline metrics are required fields.")
 
-        # Subset data for performance optimizations
+        # Filter active vectors to run lightweight data transforms
         cols_to_keep = [fin_col, time_col]
         if cat_col: cols_to_keep.append(cat_col)
         if pc_col: cols_to_keep.append(pc_col)
@@ -101,38 +99,39 @@ class BookOfBusinessAnalyzer:
         working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors='coerce').fillna(0)
         working_df = working_df.dropna(subset=[time_col])
 
-        # Bulletproof casting layer: Clear out formatting discrepancies
+        # Normalize categorical keys safely to prevent parsing omissions
         if pc_col:
             working_df[pc_col] = working_df[pc_col].apply(lambda x: str(int(x)) if isinstance(x, (float, int)) and x == int(x) else str(x).strip())
         if cat_col: working_df[cat_col] = working_df[cat_col].fillna('Unknown')
         if id_col: working_df[id_col] = working_df[id_col].fillna('Unknown')
 
-        # Core Date Filter: Slice baseline metrics from 2022 onwards
+        # Limit tracking context starting from year 2022
         working_df = working_df[working_df[time_col].dt.year >= 2022]
 
-        # Apply standardized Profit Center parameter filtering matches
+        # Explicit absolute filter matching block execution
         if pc_col and selected_profit_center != "ALL":
             working_df = working_df[working_df[pc_col] == str(selected_profit_center).strip()]
 
         if working_df.empty:
             return {
-                "kpis": {"total_premium": 0, "total_accounts": 0, "avg_account_size": 0, "retention_rate": 0, "hhi_index": 0},
+                "kpis": {"total_premium": 0, "total_accounts": 0, "avg_account_size": 0, "retention_rate": 0, "hhi_index": 0, "pareto_ratio": 0},
                 "historical_timeline": {"labels": [], "values": [], "rolling_avg": [], "mom_growth": []},
-                "segment_distribution": {}, "seasonality": {}, "projections": [], "anomalies": []
+                "segment_distribution": {}, "seasonality": {}, "projections": [], "anomalies": [],
+                "vintage_cohorts": {}
             }
 
-        # 1. High Level Metrics
+        # 1. Base Core KPI Indicators
         total_premium = float(working_df[fin_col].sum())
         total_accounts = int(working_df[id_col].nunique()) if id_col else int(len(working_df))
         avg_account_size = float(working_df[fin_col].mean()) if total_accounts > 0 else 0
 
-        # 2. Portfolio Concentration Index (HHI Approach)
+        # 2. Portfolio Concentration Index (HHI Calculation Matrix)
         hhi_index = 0
         if cat_col and total_premium > 0:
             shares = working_df.groupby(cat_col)[fin_col].sum()
             hhi_index = float(sum([(v / total_premium * 100) ** 2 for v in shares]))
 
-        # 3. Dynamic Year-Over-Year Account Retention Ratios
+        # 3. Dynamic Year-Over-Year Retention Benchmarking
         working_df['Year'] = working_df[time_col].dt.year
         retention_rate = 100.0
         years_present = sorted(working_df['Year'].unique())
@@ -143,7 +142,34 @@ class BookOfBusinessAnalyzer:
                 retained = prev_year_accounts.intersection(curr_year_accounts)
                 retention_rate = float(len(retained) / len(prev_year_accounts) * 100)
 
-        # 4. Historical Timelines
+        # 4. INSIGHT ADDITION: Pareto 80/20 Rule Volatility Benchmark Calculator
+        # Identifies what % of unique clients make up the top 80% of aggregate income
+        pareto_ratio = 20.0
+        if id_col and total_premium > 0:
+            account_sums = working_df.groupby(id_col)[fin_col].sum().sort_values(ascending=False)
+            cumulative_sum = account_sums.cumsum()
+            cutoff = total_premium * 0.80
+            top_accounts_count = len(cumulative_sum[cumulative_sum <= cutoff]) + 1
+            pareto_ratio = float((top_accounts_count / len(account_sums)) * 100) if len(account_sums) > 0 else 20.0
+
+        # 5. INSIGHT ADDITION: Cohort Vintage Organic Expansion Tracking
+        # Pins accounts to the year they debuted and assesses how their retention metrics scale
+        vintage_cohorts = {}
+        if id_col:
+            first_seen = self.df.copy()
+            first_seen[time_col] = pd.to_datetime(first_seen[time_col], errors='coerce')
+            first_seen = first_seen.dropna(subset=[time_col])
+            account_birthdays = first_seen.groupby(id_col)[time_col].min().dt.year.to_dict()
+            
+            working_df['Vintage'] = working_df[id_col].map(account_birthdays)
+            vintage_summary = working_df.groupby(['Vintage', 'Year'])[fin_col if projection_target == "premium" else id_col].agg('sum' if projection_target == "premium" else 'nunique').reset_index()
+            
+            for v in vintage_summary['Vintage'].unique():
+                v_str = f"Vintage {int(v)}"
+                v_data = vintage_summary[vintage_summary['Vintage'] == v]
+                vintage_cohorts[v_str] = {f"CY_{int(row['Year'])}": float(row[fin_col if projection_target == "premium" else id_col]) for _, row in v_data.iterrows()}
+
+        # 6. Timeline Performance Trackers
         working_df['YearMonth'] = working_df[time_col].dt.to_period('M')
         monthly_groups = working_df.groupby('YearMonth')
         
@@ -157,18 +183,18 @@ class BookOfBusinessAnalyzer:
         monthly_df['RollingAvg'] = monthly_df[target_series].rolling(window=3, min_periods=1).mean()
         monthly_df['MoM_Growth'] = monthly_df[target_series].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0) * 100
 
-        # 5. Segment Distribution Split
+        # 7. Segment Categorical Volume Share Distribution
         segment_data = {}
         if cat_col:
             seg_summary = working_df.groupby(cat_col)[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('sum' if projection_target == "premium" else 'nunique').sort_values(ascending=False).head(20)
             segment_data = {str(k): float(v) for k, v in seg_summary.items()}
 
-        # 6. Seasonality Matrix
+        # 8. Seasonality Aggregations
         working_df['MonthName'] = working_df[time_col].dt.strftime('%B')
         season_summary = working_df.groupby('MonthName')[fin_col if projection_target == "premium" else (id_col if id_col else fin_col)].agg('sum' if projection_target == "premium" else 'nunique')
         seasonality = {k: float(v) for k, v in season_summary.to_dict().items()}
 
-        # 7. Predictive Time-Series Projections
+        # 9. Predictive Time-Series Trend Projections
         projections = []
         if len(monthly_df) > 1:
             X = np.arange(len(monthly_df)).reshape(-1, 1)
@@ -183,7 +209,7 @@ class BookOfBusinessAnalyzer:
                 next_month = (last_date + pd.DateOffset(months=i+1)).strftime('%Y-%m')
                 projections.append({"period": next_month, "projected_value": max(0.0, float(pred))})
 
-        # 8. Concentration Exposure Anomalies (Flags large accounts making up >3% of total book size)
+        # 10. Risk Profiles & Concentration Anomalies Log
         anomalies = []
         if id_col:
             top_accounts = working_df.groupby(id_col)[fin_col].sum().sort_values(ascending=False).head(10)
@@ -192,7 +218,7 @@ class BookOfBusinessAnalyzer:
                     anomalies.append({
                         "identifier": str(acc_id),
                         "value": float(acc_vol),
-                        "reason": f"High Concentration Exposure Outlier Risk ({round(acc_vol/total_premium*100, 1)}% of selected scope portfolio volume)"
+                        "reason": f"High Concentration Exposure Outlier Risk ({round(acc_vol/total_premium*100, 1)}% of total selected folder scope)"
                     })
 
         return {
@@ -201,7 +227,8 @@ class BookOfBusinessAnalyzer:
                 "total_accounts": total_accounts,
                 "avg_account_size": avg_account_size,
                 "retention_rate": retention_rate,
-                "hhi_index": hhi_index
+                "hhi_index": hhi_index,
+                "pareto_ratio":  pareto_ratio
             },
             "historical_timeline": {
                 "labels": monthly_df['YearMonthStr'].tolist(),
@@ -212,5 +239,6 @@ class BookOfBusinessAnalyzer:
             "segment_distribution": segment_data,
             "seasonality": seasonality,
             "projections": projections,
-            "anomalies": anomalies
+            "anomalies": anomalies,
+            "vintage_cohorts": vintage_cohorts
         }
