@@ -70,26 +70,30 @@
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Premium</p>
-                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0.00</p>
+                    <p class="text-xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0.00</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Count</p>
-                    <p class="text-2xl font-bold text-teal-400 mt-1 tracking-tight" id="kpi-accounts">0</p>
+                    <p class="text-xl font-bold text-teal-400 mt-1 tracking-tight" id="kpi-accounts">0</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure</p>
-                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0.00</p>
+                    <p class="text-xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0.00</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Account Retention Ratio</p>
-                    <p class="text-2xl font-bold text-emerald-400 mt-1 tracking-tight" id="kpi-retention">0.0%</p>
+                    <p class="text-xl font-bold text-emerald-400 mt-1 tracking-tight" id="kpi-retention">0.0%</p>
                 </div>
-                <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Concentration HHI Index</p>
-                    <p class="text-2xl font-bold text-amber-400 mt-1 tracking-tight" id="kpi-hhi">0</p>
+                    <p class="text-xl font-bold text-amber-400 mt-1 tracking-tight" id="kpi-hhi">0</p>
+                </div>
+                <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Pareto 80% Rev Base</p>
+                    <p class="text-xl font-bold text-purple-400 mt-1 tracking-tight" id="kpi-pareto">0.0%</p>
                 </div>
             </div>
 
@@ -114,6 +118,18 @@
                     <div class="h-72"><canvas id="seasonalityChart"></canvas></div>
                 </div>
             </div>
+
+            <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
+                <h4 class="text-sm font-medium tracking-wide text-teal-400 mb-4">Cohort Vintage Performance Retention Matrix (2022+)</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead id="cohort-table-head" class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
+                            </thead>
+                        <tbody id="cohort-table-rows" class="divide-y divide-slate-900 text-slate-300 font-mono text-xs">
+                            </tbody>
+                    </table>
+                </div>
+            </section>
 
             <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
                 <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">Key Risk Exposures & Book Concentration Outliers</h4>
@@ -291,6 +307,10 @@
             document.getElementById('kpi-avg-size').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.avg_account_size);
             document.getElementById('kpi-retention').innerText = res.kpis.retention_rate.toFixed(1) + "%";
             document.getElementById('kpi-hhi').innerText = Math.round(res.kpis.hhi_index).toLocaleString();
+            document.getElementById('kpi-pareto').innerText = res.kpis.pareto_ratio.toFixed(1) + "%";
+
+            // Process and Build Dynamic Vintage Cohorts Table Layout View
+            buildVintageCohortTable(res.vintage_cohorts);
 
             const tableBody = document.getElementById('anomaly-table-rows');
             if (res.anomalies && res.anomalies.length > 0) {
@@ -309,6 +329,46 @@
             renderSegmentChart(res.segment_distribution);
             renderProjectionChart(res.projections);
             renderSeasonalityChart(res.seasonality);
+        }
+
+        function buildVintageCohortTable(cohorts) {
+            const head = document.getElementById('cohort-table-head');
+            const body = document.getElementById('cohort-table-rows');
+            
+            head.innerHTML = '';
+            body.innerHTML = '';
+
+            const calendarYears = ["CY_2022", "CY_2023", "CY_2024", "CY_2025", "CY_2026"];
+            
+            // Build out structural headers
+            let headerHtml = `<th class="py-3 pl-4">Account Birth Cohort</th>`;
+            calendarYears.forEach(cy => {
+                headerHtml += `<th class="py-3">${cy.replace('_', ' ')} Target</th>`;
+            });
+            head.innerHTML = `<tr>${headerHtml}</tr>`;
+
+            // Populate rows
+            const vintageKeys = Object.keys(cohorts).sort();
+            if (vintageKeys.length === 0) {
+                body.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No cross-year performance historical metrics identified.</td></tr>`;
+                return;
+            }
+
+            vintageKeys.forEach(vKey => {
+                let rowHtml = `<td class="py-3 pl-4 font-semibold text-slate-200">${vKey}</td>`;
+                calendarYears.forEach(cy => {
+                    let val = cohorts[vKey][cy];
+                    if (val !== undefined) {
+                        let formatted = currentMetricTarget === "premium" 
+                            ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val)
+                            : val.toLocaleString();
+                        rowHtml += `<td class="py-3 text-emerald-400">${formatted}</td>`;
+                    } else {
+                        rowHtml += `<td class="py-3 text-slate-600">-</td>`;
+                    }
+                });
+                body.innerHTML += `<tr class="hover:bg-slate-900/30">${rowHtml}</tr>`;
+            });
         }
 
         function initChartInstance(ctxId, configuration) {
