@@ -160,7 +160,7 @@
 
             try {
                 const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error("Server communication break down during ingestion.");
+                if (!response.ok) throw new Error("Server communication breakdown during ingestion.");
                 
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
