@@ -77,8 +77,8 @@ async def analyze_data(request: Request):
         end_date = body.get("end_date")
         include_future_dates = bool(body.get("include_future_dates", False))
         selected_agency_codes = body.get("selected_agency_codes", []) or []
+        business_view = body.get("business_view", "all")
         
-        # Parse goal safely
         goal_raw = body.get("goal_value", 0)
         try:
             goal_value = float(goal_raw) if goal_raw not in (None, "", "null") else 0.0
@@ -92,7 +92,7 @@ async def analyze_data(request: Request):
         results = analyzer.run_analysis(
             mapping, profit_center, projection_target,
             start_date, end_date, include_future_dates,
-            selected_agency_codes, goal_value
+            selected_agency_codes, goal_value, business_view
         )
         return JSONResponse(content=results)
     except Exception as e:
