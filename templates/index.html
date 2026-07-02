@@ -47,14 +47,28 @@
 
         <div id="workspace-dashboard" class="hidden space-y-8">
             
-            <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-6 items-center justify-between">
-                <div class="flex items-center space-x-4">
+            <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-6 items-end justify-between">
+                <div class="flex flex-wrap items-end gap-4">
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Profit Center Filter</label>
                         <select id="filter-profit-center" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[200px]">
                             <option value="ALL">All Profit Centers combined</option>
                         </select>
                     </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Start Date</label>
+                        <input type="date" id="filter-start-date" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">End Date</label>
+                        <input type="date" id="filter-end-date" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
+                    </div>
+
+                    <button onclick="resetDateRange()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                        Reset Dates
+                    </button>
                 </div>
 
                 <div>
@@ -69,6 +83,8 @@
                     </div>
                 </div>
             </div>
+
+            <div id="active-range-indicator" class="text-xs text-slate-500 text-center -mt-4"></div>
             
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
@@ -143,6 +159,7 @@
         let activeCharts = {};
         let activeMapping = {};
         let currentMetricTarget = "premium";
+        let dateBounds = { min_date: null, max_date: null };
 
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
@@ -167,6 +184,10 @@
 
                 allColumns = data.columns;
                 populateProfitCenterDropdown(data.profit_centers);
+                if (data.date_range) {
+                    dateBounds = data.date_range;
+                    applyDateBounds(dateBounds);
+                }
                 renderMappingSelectors(data.inferred_mapping);
             } catch (err) {
                 alert("Upload Pipeline Fault: " + err.message);
@@ -190,6 +211,38 @@
                 profitCenters.forEach(pc => {
                     dropdown.innerHTML += `<option value="${pc}">${pc}</option>`;
                 });
+            }
+        }
+
+        function applyDateBounds(bounds) {
+            const startInput = document.getElementById('filter-start-date');
+            const endInput = document.getElementById('filter-end-date');
+            if (bounds.min_date) {
+                startInput.min = bounds.min_date;
+                startInput.max = bounds.max_date;
+                startInput.value = bounds.min_date;
+            }
+            if (bounds.max_date) {
+                endInput.min = bounds.min_date;
+                endInput.max = bounds.max_date;
+                endInput.value = bounds.max_date;
+            }
+            updateActiveRangeIndicator();
+        }
+
+        function resetDateRange() {
+            applyDateBounds(dateBounds);
+            triggerUpdate();
+        }
+
+        function updateActiveRangeIndicator() {
+            const indicator = document.getElementById('active-range-indicator');
+            const start = document.getElementById('filter-start-date').value;
+            const end = document.getElementById('filter-end-date').value;
+            if (start && end) {
+                indicator.innerText = `Analysis Window: ${start} through ${end}`;
+            } else {
+                indicator.innerText = '';
             }
         }
 
@@ -250,8 +303,7 @@
                 client_id: document.getElementById('map-client_id').value
             };
 
-            // Refresh the profit center dropdown to match the user's confirmed column.
-            // This is the fix: previously the slicer kept values from the inferred column.
+            // Refresh the profit center dropdown to match the confirmed column
             try {
                 const pcResponse = await fetch('/api/profit-centers', {
                     method: 'POST',
@@ -265,7 +317,25 @@
                     }
                 }
             } catch (err) {
-                console.warn("Profit center refresh soft-failed, defaulting to inferred list:", err);
+                console.warn("Profit center refresh soft-failed:", err);
+            }
+
+            // Refresh the date range bounds to match the confirmed timeline column
+            try {
+                const drResponse = await fetch('/api/date-range', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timeline_column: activeMapping.timeline_metric })
+                });
+                if (drResponse.ok) {
+                    const drData = await drResponse.json();
+                    if (drData && drData.min_date) {
+                        dateBounds = drData;
+                        applyDateBounds(dateBounds);
+                    }
+                }
+            } catch (err) {
+                console.warn("Date range refresh soft-failed:", err);
             }
             
             document.getElementById('mapping-card').classList.add('hidden');
@@ -275,8 +345,12 @@
 
         async function triggerUpdate() {
             const selectedPC = document.getElementById('filter-profit-center').value;
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
             const unitLabel = currentMetricTarget === "premium" ? "Premium ($)" : "Policy Count (#)";
             
+            updateActiveRangeIndicator();
+
             document.getElementById('title-trend').innerText = `Historical ${unitLabel} Monthly Trend`;
             document.getElementById('title-segment').innerText = `Segment Allocation Performance (${unitLabel})`;
             document.getElementById('title-projection').innerText = `Expected 12-Month ${unitLabel} Model Projections`;
@@ -289,7 +363,9 @@
                     body: JSON.stringify({ 
                         mapping: activeMapping,
                         profit_center: selectedPC,
-                        projection_target: currentMetricTarget
+                        projection_target: currentMetricTarget,
+                        start_date: startDate || null,
+                        end_date: endDate || null
                     })
                 });
                 if (!response.ok) throw new Error("Engine threw an error processing metrics array matrix.");
