@@ -17,7 +17,6 @@ async def upload_file(file: UploadFile = File(...)):
         contents = await file.read()
         analyzer = BookOfBusinessAnalyzer(contents, file.filename)
         schema = analyzer.infer_schema()
-        
         UPLOADED_FILE_CACHE["current_session"] = analyzer
         return JSONResponse(content=schema)
     except Exception as e:
@@ -27,18 +26,28 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/api/profit-centers")
 async def refresh_profit_centers(request: Request):
-    """Returns unique profit center values for a specific column,
-    refreshed after user confirms their schema mapping."""
     try:
         body = await request.json()
         pc_col = body.get("profit_center_column")
-        
         analyzer = UPLOADED_FILE_CACHE.get("current_session")
         if not analyzer:
             raise HTTPException(status_code=400, detail="No active data file found in session memory.")
-        
-        pcs = analyzer.get_profit_centers(pc_col)
-        return JSONResponse(content={"profit_centers": pcs})
+        return JSONResponse(content={"profit_centers": analyzer.get_profit_centers(pc_col)})
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}\n\nTraceback:\n{error_trace}"})
+
+@app.post("/api/agency-codes")
+async def refresh_agency_codes(request: Request):
+    """Return unique agency code values for a given column, refreshed after mapping confirmation."""
+    try:
+        body = await request.json()
+        agency_col = body.get("agency_code_column")
+        analyzer = UPLOADED_FILE_CACHE.get("current_session")
+        if not analyzer:
+            raise HTTPException(status_code=400, detail="No active data file found in session memory.")
+        return JSONResponse(content={"agency_codes": analyzer.get_agency_codes(agency_col)})
     except Exception as e:
         error_trace = traceback.format_exc()
         print(error_trace)
@@ -46,18 +55,13 @@ async def refresh_profit_centers(request: Request):
 
 @app.post("/api/date-range")
 async def refresh_date_range(request: Request):
-    """Returns the min/max date bounds for a specific timeline column,
-    used to initialize the date slicer with sensible defaults after mapping confirmation."""
     try:
         body = await request.json()
         time_col = body.get("timeline_column")
-        
         analyzer = UPLOADED_FILE_CACHE.get("current_session")
         if not analyzer:
             raise HTTPException(status_code=400, detail="No active data file found in session memory.")
-        
-        date_range = analyzer.get_date_range(time_col)
-        return JSONResponse(content=date_range)
+        return JSONResponse(content=analyzer.get_date_range(time_col))
     except Exception as e:
         error_trace = traceback.format_exc()
         print(error_trace)
@@ -72,12 +76,18 @@ async def analyze_data(request: Request):
         projection_target = body.get("projection_target", "premium")
         start_date = body.get("start_date")
         end_date = body.get("end_date")
+        include_future_dates = bool(body.get("include_future_dates", False))
+        selected_agency_codes = body.get("selected_agency_codes", []) or []
         
         analyzer = UPLOADED_FILE_CACHE.get("current_session")
         if not analyzer:
             raise HTTPException(status_code=400, detail="No active data file found in session memory.")
             
-        results = analyzer.run_analysis(mapping, profit_center, projection_target, start_date, end_date)
+        results = analyzer.run_analysis(
+            mapping, profit_center, projection_target,
+            start_date, end_date, include_future_dates,
+            selected_agency_codes
+        )
         return JSONResponse(content=results)
     except Exception as e:
         error_trace = traceback.format_exc()
