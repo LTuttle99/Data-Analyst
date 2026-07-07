@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 
 # Baseline analytical cutoff. Update this to shift the entire tool's floor date.
-ANALYTICAL_BASELINE = pd.Timestamp("2024-12-01")
+ANALYTICAL_BASELINE = pd.Timestamp("2020-01-01")
 
 # Keywords used to detect "new business" vs "renewal" in an explicit type column
 NEW_BUSINESS_KEYWORDS = ["new", "nb", "new business", "acquisition", "acquired"]
