@@ -653,6 +653,13 @@
             }
         });
 
+        function extractErrorMessage(data, fallback) {
+            if (!data) return fallback;
+            if (typeof data.error === 'string' && data.error) return data.error;
+            if (typeof data.detail === 'string' && data.detail) return data.detail;
+            return fallback;
+        }
+
         async function handleFile(file) {
             if (!file) return;
 
@@ -670,14 +677,10 @@
                     body: formData
                 });
 
-                if (!response.ok) {
-                    throw new Error("Server communication breakdown during ingestion.");
-                }
-
                 const data = await response.json();
 
-                if (data.error) {
-                    throw new Error(data.error);
+                if (!response.ok || data.error) {
+                    throw new Error(extractErrorMessage(data, `Upload failed (HTTP ${response.status}).`));
                 }
 
                 allColumns = data.columns || [];
@@ -1197,7 +1200,7 @@
                 const data = await response.json();
 
                 if (!response.ok || data.error) {
-                    throw new Error(data.error || `Suggestion request failed (HTTP ${response.status}).`);
+                    throw new Error(extractErrorMessage(data, `Suggestion request failed (HTTP ${response.status}).`));
                 }
 
                 renderGoalSuggestions(data.suggestions || []);
@@ -1534,7 +1537,7 @@
                 const analysisResults = await response.json();
 
                 if (!response.ok || analysisResults.error) {
-                    throw new Error(analysisResults.error || `Analysis request failed (HTTP ${response.status}).`);
+                    throw new Error(extractErrorMessage(analysisResults, `Analysis request failed (HTTP ${response.status}).`));
                 }
 
                 displayDashboard(analysisResults);
@@ -1591,7 +1594,7 @@
                 const uploadData = await uploadResponse.json();
 
                 if (!uploadResponse.ok || uploadData.error) {
-                    throw new Error(uploadData.error || `Comparison upload failed (HTTP ${uploadResponse.status}).`);
+                    throw new Error(extractErrorMessage(uploadData, `Comparison upload failed (HTTP ${uploadResponse.status}).`));
                 }
 
                 await runComparisonAnalysis();
@@ -1631,7 +1634,7 @@
             const data = await response.json();
 
             if (!response.ok || data.error) {
-                throw new Error(data.error || `Comparison analysis failed (HTTP ${response.status}).`);
+                throw new Error(extractErrorMessage(data, `Comparison analysis failed (HTTP ${response.status}).`));
             }
 
             lastComparisonResults = data;
