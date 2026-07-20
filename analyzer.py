@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 
 
-ANALYTICAL_BASELINE = pd.Timestamp("2016-01-01")
+ANALYTICAL_BASELINE = pd.Timestamp("2020-01-01")
 
 NEW_BUSINESS_KEYWORDS = ["new", "nb", "new business", "acquisition", "acquired"]
 RENEWAL_KEYWORDS = ["renewal", "renew", "renewed", "existing", "ren"]
@@ -381,17 +381,23 @@ class BookOfBusinessAnalyzer:
         future = []
 
         for i, base_pred in enumerate(future_trend):
+            months_ahead = i + 1
             future_period = last_period + i + 1
             cal_month = int(future_period.month)
             seasonal_mult = seasonal_index.get(cal_month, 1.0)
             expected = max(0.0, float(base_pred) * seasonal_mult)
-            conservative = max(0.0, expected - residual_std)
-            aggressive = max(0.0, expected + residual_std)
+
+            # Uncertainty compounds with distance into the future rather than staying fixed —
+            # a forecast for next month should be tighter than one for 30 months out.
+            band_width = residual_std * float(np.sqrt(months_ahead))
+            conservative = max(0.0, expected - band_width)
+            aggressive = max(0.0, expected + band_width)
 
             future.append({
                 "period": str(future_period),
                 "year": int(future_period.year),
                 "month": cal_month,
+                "months_ahead": months_ahead,
                 "expected_value": expected,
                 "conservative_value": conservative,
                 "aggressive_value": aggressive
@@ -986,6 +992,98 @@ class BookOfBusinessAnalyzer:
             "executive_summary": executive_summary
         }
 
+    def _empty_long_range_forecast(self, projection_target="premium", horizon_months=24):
+        return {
+            "metric_type": projection_target,
+            "horizon_months": horizon_months,
+            "trend_direction": "Flat",
+            "confidence_label": "Insufficient Data",
+            "monthly": [],
+            "annual_rollup": [],
+            "executive_summary": "Not enough monthly history is available to build a multi-year projection."
+        }
+
+    def _compute_long_range_forecast(self, monthly_df, target_series, projection_target, horizon_months=24):
+        """
+        Project `horizon_months` months forward from the latest data point (not tied to the
+        current calendar year), and roll those months up into per-calendar-year totals —
+        useful for multi-year planning rather than just a year-end estimate.
+        """
+        horizon_months = int(np.clip(horizon_months, 1, 60))
+
+        if monthly_df is None or monthly_df.empty or len(monthly_df) < 3:
+            return self._empty_long_range_forecast(projection_target, horizon_months)
+
+        future_monthly, diagnostics = self._seasonal_trend_forecast(monthly_df, target_series, horizon_months)
+
+        if not future_monthly:
+            return self._empty_long_range_forecast(projection_target, horizon_months)
+
+        annual = {}
+
+        for item in future_monthly:
+            year = item["year"]
+            bucket = annual.setdefault(year, {
+                "expected_total": 0.0, "conservative_total": 0.0, "aggressive_total": 0.0, "months_included": 0
+            })
+            bucket["expected_total"] += item["expected_value"]
+            bucket["conservative_total"] += item["conservative_value"]
+            bucket["aggressive_total"] += item["aggressive_value"]
+            bucket["months_included"] += 1
+
+        annual_rollup = [
+            {
+                "year": int(year),
+                "projected_total": float(vals["expected_total"]),
+                "conservative_total": float(vals["conservative_total"]),
+                "aggressive_total": float(vals["aggressive_total"]),
+                "months_included": int(vals["months_included"]),
+                "is_partial_year": vals["months_included"] < 12
+            }
+            for year, vals in sorted(annual.items())
+        ]
+
+        slope = diagnostics.get("slope", 0.0)
+
+        if slope > 0:
+            trend_direction = "Increasing"
+        elif slope < 0:
+            trend_direction = "Decreasing"
+        else:
+            trend_direction = "Flat"
+
+        data_points = len(monthly_df)
+        r_squared = diagnostics.get("r_squared", 0.0)
+
+        if data_points < 6:
+            confidence_label = "Low"
+        elif r_squared >= 0.5 and data_points >= 18:
+            confidence_label = "Moderate"
+        else:
+            confidence_label = "Low"
+
+        metric_label = "premium volume" if projection_target == "premium" else "policy count"
+        far_year = annual_rollup[-1]["year"] if annual_rollup else None
+
+        executive_summary = (
+            f"Projecting {horizon_months} months forward from the latest available data, the trend is "
+            f"{trend_direction.lower()} in {metric_label}. "
+            f"Confidence in the {far_year} figures is necessarily lower than near-term months — "
+            f"the projected range widens the further out the estimate reaches, since a trend fit on "
+            f"{data_points} months of history compounds its own uncertainty over a multi-year horizon. "
+            f"Treat years beyond the first 12 months as directional planning input rather than a firm commitment."
+        )
+
+        return {
+            "metric_type": projection_target,
+            "horizon_months": horizon_months,
+            "trend_direction": trend_direction,
+            "confidence_label": confidence_label,
+            "monthly": future_monthly,
+            "annual_rollup": annual_rollup,
+            "executive_summary": executive_summary
+        }
+
     def _generate_ai_insights(
         self,
         total_premium,
@@ -1468,7 +1566,8 @@ class BookOfBusinessAnalyzer:
         selected_agency_codes: list = None,
         goal_value: float = 0,
         goals: list = None,
-        business_view: str = "all"
+        business_view: str = "all",
+        forecast_horizon_months: int = 24
     ) -> dict:
         """
         Run the full book-of-business analysis pipeline: filter/scope the raw data per the
@@ -1640,10 +1739,10 @@ class BookOfBusinessAnalyzer:
                 "seasonality": {},
                 "projections": [],
                 "forecast_outlook": self._empty_forecast_outlook(projection_target),
+                "long_range_forecast": self._empty_long_range_forecast(projection_target, forecast_horizon_months),
                 "ai_insights": self._empty_ai_insights(),
                 "anomalies": [],
                 "trend_anomalies": [],
-                "vintage_cohorts": {},
                 "goal_progress": empty_goal_progress,
                 "business_split": business_split,
                 "diagnostics": {
@@ -1685,34 +1784,6 @@ class BookOfBusinessAnalyzer:
             cutoff = total_premium * 0.80
             top_accounts_count = len(cumulative_sum[cumulative_sum <= cutoff]) + 1
             pareto_ratio = float((top_accounts_count / len(account_sums)) * 100) if len(account_sums) > 0 else 20.0
-
-        vintage_cohorts = {}
-
-        if id_col:
-            first_seen = self.df.copy()
-            first_seen[time_col] = pd.to_datetime(first_seen[time_col], errors="coerce")
-            first_seen = first_seen.dropna(subset=[time_col])
-            account_birthdays = first_seen.groupby(id_col)[time_col].min().dt.year.to_dict()
-            working_df["Vintage"] = working_df[id_col].map(account_birthdays)
-
-            vintage_metric_col = fin_col if projection_target == "premium" else id_col
-            vintage_agg = "sum" if projection_target == "premium" else "nunique"
-
-            vintage_summary = (
-                working_df
-                .groupby(["Vintage", "Year"])[vintage_metric_col]
-                .agg(vintage_agg)
-                .reset_index()
-            )
-
-            for v in vintage_summary["Vintage"].dropna().unique():
-                v_str = f"Vintage {int(v)}"
-                v_data = vintage_summary[vintage_summary["Vintage"] == v]
-
-                vintage_cohorts[v_str] = {
-                    f"CY_{int(row['Year'])}": float(row[vintage_metric_col])
-                    for _, row in v_data.iterrows()
-                }
 
         working_df["YearMonth"] = working_df[time_col].dt.to_period("M")
         monthly_groups = working_df.groupby("YearMonth")
@@ -1800,6 +1871,13 @@ class BookOfBusinessAnalyzer:
             projection_target=projection_target
         )
 
+        long_range_forecast = self._compute_long_range_forecast(
+            monthly_df=monthly_df,
+            target_series=target_series,
+            projection_target=projection_target,
+            horizon_months=forecast_horizon_months
+        )
+
         goal_progress = self.compute_goals(
             working_df, fin_col, id_col, time_col, pc_col, agency_col, cat_col,
             projection_target, effective_goals, effective_end
@@ -1872,7 +1950,7 @@ class BookOfBusinessAnalyzer:
             "ai_insights": ai_insights,
             "anomalies": anomalies,
             "trend_anomalies": trend_anomalies,
-            "vintage_cohorts": vintage_cohorts,
+            "long_range_forecast": long_range_forecast,
             "goal_progress": goal_progress,
             "business_split": business_split,
             "diagnostics": {
