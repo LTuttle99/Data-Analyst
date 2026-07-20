@@ -7,37 +7,50 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
 
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
     <header class="border-b border-slate-800 bg-slate-950 px-8 py-4 flex items-center justify-between">
         <div class="flex items-center space-x-3">
             <div class="h-8 w-8 rounded bg-teal-500 flex items-center justify-center font-bold text-slate-950">B</div>
-            <h1 class="text-xl font-semibold tracking-wide text-white">BookOfBusiness<span class="text-teal-400 font-normal">.io</span></h1>
+            <h1 class="text-xl font-semibold tracking-wide text-white">
+                BookOfBusiness<span class="text-teal-400 font-normal">.io</span>
+            </h1>
         </div>
-        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">Advanced Analytics Hub</div>
+
+        <div class="text-xs text-slate-400 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
+            Advanced Analytics Hub
+        </div>
     </header>
 
     <main class="max-w-7xl mx-auto p-6 space-y-6">
-        
+
         <section id="upload-card" class="bg-slate-950 border border-slate-800 rounded-xl p-8 max-w-xl mx-auto shadow-2xl">
             <h2 class="text-lg font-medium text-white mb-2">Initialize Book Portfolio Analysis</h2>
-            <p class="text-sm text-slate-400 mb-6">Upload ledger records. Analysis automatically scopes from December 2024 onward.</p>
-            
-            <div class="border-2 border-dashed border-slate-700 hover:border-teal-500 rounded-lg p-8 text-center cursor-pointer bg-slate-900/50 transition-colors group" id="drop-zone">
-                <input type="file" id="file-input" class="hidden" accept=".csv, .xlsx, .xls">
+            <p class="text-sm text-slate-400 mb-6">
+                Upload ledger records. Analysis automatically scopes from January 2020 onward.
+            </p>
+
+            <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-teal-500 rounded-lg p-8 text-center cursor-pointer bg-slate-900/50 transition-colors group">
+                <input type="file" id="file-input" class="hidden" accept=".csv,.xlsx,.xls">
+
                 <div id="upload-status" class="space-y-3">
                     <svg class="mx-auto h-12 w-12 text-slate-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <p class="text-sm font-medium text-slate-300">Select file path from device workspace</p>
+
+                    <p class="text-sm font-medium text-slate-300">
+                        Select a CSV or Excel file from your device
+                    </p>
                 </div>
             </div>
         </section>
 
         <section id="mapping-card" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-8 max-w-xl mx-auto shadow-2xl">
             <h3 class="text-lg font-medium text-white mb-2">Verify Schema Assertions</h3>
-            <p class="text-sm text-slate-400 mb-6">Confirm parsed structural mappings, specifically targeting your dynamic fields.</p>
-            
+            <p class="text-sm text-slate-400 mb-6">
+                Confirm parsed structural mappings before running the analytics engine.
+            </p>
+
             <div class="space-y-4" id="mapping-selectors"></div>
 
             <button id="submit-mapping-btn" onclick="submitMapping()" class="w-full mt-6 bg-teal-500 hover:bg-teal-400 text-slate-950 text-sm font-semibold py-3 px-4 rounded-lg shadow transition-colors">
@@ -46,47 +59,63 @@
         </section>
 
         <div id="workspace-dashboard" class="hidden space-y-6">
-            
-            <!-- FILTER BAR: Restructured into two clean rows -->
+
             <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-4">
-                
-                <!-- Row 1: Slicers -->
+
                 <div class="flex flex-wrap items-end gap-4">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Profit Center Filter</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Profit Center Filter
+                        </label>
+
                         <select id="filter-profit-center" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[200px]">
                             <option value="ALL">All Profit Centers combined</option>
                         </select>
                     </div>
 
                     <div id="agency-filter-container" class="hidden relative">
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Agency Codes</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Agency Codes
+                        </label>
+
                         <button type="button" onclick="toggleAgencyDropdown(event)" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[220px] flex items-center justify-between hover:border-teal-500 transition-colors">
                             <span id="agency-summary-label">All Agency Codes</span>
-                            <svg class="w-3 h-3 ml-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            <span class="ml-2 text-slate-400">▼</span>
                         </button>
+
                         <div id="agency-dropdown-panel" class="hidden absolute z-40 mt-1 bg-slate-950 border border-slate-700 rounded-lg shadow-2xl w-72 max-h-80 overflow-hidden">
-                            <div class="p-2 border-b border-slate-800 flex items-center gap-2">
-                                <input type="text" id="agency-search-input" oninput="filterAgencyList()" placeholder="Search codes..." class="bg-slate-900 border border-slate-700 rounded text-xs p-1.5 text-slate-100 focus:border-teal-500 flex-grow">
+                            <div class="p-2 border-b border-slate-800">
+                                <input type="text" id="agency-search-input" oninput="filterAgencyList()" placeholder="Search codes..." class="bg-slate-900 border border-slate-700 rounded text-xs p-1.5 text-slate-100 focus:border-teal-500 w-full">
                             </div>
+
                             <div class="p-2 border-b border-slate-800 flex justify-between text-xs">
                                 <button onclick="selectAllAgencies()" class="text-teal-400 hover:text-teal-300 font-medium">Select All</button>
                                 <button onclick="clearAllAgencies()" class="text-slate-400 hover:text-slate-300 font-medium">Clear All</button>
                             </div>
+
                             <div id="agency-checkbox-list" class="overflow-y-auto max-h-52 p-2 space-y-1"></div>
+
                             <div class="p-2 border-t border-slate-800 flex justify-end">
-                                <button onclick="applyAgencyFilter()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded transition-colors">Apply</button>
+                                <button onclick="applyAgencyFilter()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded transition-colors">
+                                    Apply
+                                </button>
                             </div>
                         </div>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Start Date</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Start Date
+                        </label>
+
                         <input type="date" id="filter-start-date" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">End Date</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            End Date
+                        </label>
+
                         <input type="date" id="filter-end-date" onchange="triggerUpdate()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
                     </div>
 
@@ -95,32 +124,48 @@
                     </button>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Annual Goal</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Annual Goal
+                        </label>
+
                         <div class="flex gap-1">
                             <input type="number" id="filter-goal-value" min="0" step="1000" placeholder="e.g. 5000000" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 w-40">
-                            <button onclick="applyGoal()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg transition-colors">Apply</button>
+                            <button onclick="applyGoal()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
+                                Apply
+                            </button>
                         </div>
-                        <span id="goal-input-label" class="text-[10px] text-slate-500 mt-1 block">Annual Goal ($)</span>
+
+                        <span id="goal-input-label" class="text-[10px] text-slate-500 mt-1 block">
+                            Annual Goal ($)
+                        </span>
                     </div>
                 </div>
 
-                <!-- Divider -->
                 <div class="border-t border-slate-800"></div>
 
-                <!-- Row 2: Toggles and view controls -->
                 <div class="flex flex-wrap items-end gap-4 justify-between">
                     <div class="flex flex-wrap items-end gap-4">
                         <div>
-                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Effective Date Scope</label>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                                Effective Date Scope
+                            </label>
+
                             <label class="inline-flex items-center cursor-pointer bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
                                 <input type="checkbox" id="toggle-future-dates" onchange="triggerUpdate()" class="sr-only peer">
-                                <div class="relative w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
-                                <span class="ml-2 text-xs text-slate-300" id="future-toggle-label">Include future effective dates</span>
+
+                                <div class="relative w-9 h-5 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
+
+                                <span class="ml-2 text-xs text-slate-300" id="future-toggle-label">
+                                    Include future effective dates
+                                </span>
                             </label>
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Business View</label>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                                Business View
+                            </label>
+
                             <div class="inline-flex rounded-lg border border-slate-700 p-0.5 bg-slate-900">
                                 <button id="view-all" onclick="setBusinessView('all')" class="px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors">All</button>
                                 <button id="view-new" onclick="setBusinessView('new')" class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors">New Only</button>
@@ -130,11 +175,15 @@
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Analytical Forecast Vector</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Analytical Forecast Vector
+                        </label>
+
                         <div class="inline-flex rounded-lg border border-slate-700 p-0.5 bg-slate-900">
                             <button id="toggle-metric-premium" onclick="setMetricTarget('premium')" class="px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors">
                                 Premium Volume ($)
                             </button>
+
                             <button id="toggle-metric-count" onclick="setMetricTarget('count')" class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors">
                                 Policy Count (#)
                             </button>
@@ -143,52 +192,122 @@
                 </div>
             </div>
 
-            <!-- Info banners: proper spacing, no negative margins -->
             <div id="active-range-indicator" class="text-xs text-slate-500 text-center"></div>
+
             <div id="future-date-diagnostic" class="hidden text-xs text-amber-400 text-center bg-amber-500/10 border border-amber-500/20 rounded-lg py-2 px-4 mx-auto max-w-3xl"></div>
-            
+
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Premium</p>
-                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0.00</p>
+                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0</p>
                 </div>
+
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Count</p>
                     <p class="text-2xl font-bold text-teal-400 mt-1 tracking-tight" id="kpi-accounts">0</p>
                 </div>
+
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure</p>
-                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0.00</p>
+                    <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0</p>
                 </div>
+
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Account Retention Ratio</p>
                     <p class="text-2xl font-bold text-emerald-400 mt-1 tracking-tight" id="kpi-retention">0.0%</p>
                 </div>
+
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Concentration HHI Index</p>
                     <p class="text-2xl font-bold text-amber-400 mt-1 tracking-tight" id="kpi-hhi">0</p>
                 </div>
             </div>
 
+            <section id="forecast-outlook-card" class="bg-slate-950 border border-purple-500/30 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium tracking-wide text-purple-300">Executive Forecast Outlook</h4>
+                        <p class="text-xs text-slate-500 mt-1">
+                            Based on current performance, this estimates where the selected book will finish.
+                        </p>
+                    </div>
+
+                    <span id="forecast-confidence-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400">
+                        Confidence: —
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Current Actual</p>
+                        <p id="forecast-current-actual" class="text-xl font-bold text-white mt-1">$0</p>
+                    </div>
+
+                    <div class="bg-purple-500/10 border border-purple-500/20 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-purple-300">Projected Year-End</p>
+                        <p id="forecast-year-end" class="text-xl font-bold text-purple-300 mt-1">$0</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Forecast Range</p>
+                        <p id="forecast-range" class="text-xl font-bold text-white mt-1">$0 - $0</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Growth vs Prior Year</p>
+                        <p id="forecast-growth" class="text-xl font-bold text-emerald-400 mt-1">0.0%</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Goal Status</p>
+                        <p id="forecast-goal-status" class="text-lg font-bold text-white mt-1">No Goal Set</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Projected Gap to Goal</p>
+                        <p id="forecast-goal-gap" class="text-lg font-bold text-white mt-1">$0</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Trend Direction</p>
+                        <p id="forecast-trend-direction" class="text-lg font-bold text-white mt-1">Flat</p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Executive Summary</p>
+                    <p id="forecast-executive-summary" class="text-sm text-slate-300 leading-relaxed">
+                        Upload and analyze data to generate a forecast summary.
+                    </p>
+                </div>
+            </section>
+
             <section id="business-split-card" class="bg-slate-950 border border-slate-800 rounded-xl p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h4 class="text-sm font-medium tracking-wide text-slate-300">New Business vs Renewal Split</h4>
-                    <span id="classification-method-badge" class="text-xs font-medium px-3 py-1 rounded-full bg-slate-800 text-slate-400">Classification: —</span>
+                    <span id="classification-method-badge" class="text-xs font-medium px-3 py-1 rounded-full bg-slate-800 text-slate-400">
+                        Classification: —
+                    </span>
                 </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                     <div class="flex items-center justify-center">
                         <div class="relative w-48 h-48">
                             <canvas id="businessSplitChart"></canvas>
                         </div>
                     </div>
+
                     <div class="bg-teal-500/10 border border-teal-500/20 rounded-lg p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-teal-400 mb-2">🆕 New Business</p>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-teal-400 mb-2">New Business</p>
                         <p id="nb-premium" class="text-2xl font-bold text-white">$0</p>
                         <p id="nb-count" class="text-xs text-slate-400 mt-1">0 policies</p>
                         <p id="nb-share" class="text-xs text-teal-300 mt-2 font-medium">0.0% of book</p>
                     </div>
+
                     <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-blue-400 mb-2">🔁 Renewal</p>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-blue-400 mb-2">Renewal</p>
                         <p id="ren-premium" class="text-2xl font-bold text-white">$0</p>
                         <p id="ren-count" class="text-xs text-slate-400 mt-1">0 policies</p>
                         <p id="ren-share" class="text-xs text-blue-300 mt-2 font-medium">0.0% of book</p>
@@ -199,42 +318,52 @@
             <section id="goal-vs-actual-card" class="bg-slate-950 border border-slate-800 rounded-xl p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h4 class="text-sm font-medium tracking-wide text-slate-300">Goal vs Actual Pacing</h4>
-                    <span id="goal-status-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400">No Goal Set</span>
+                    <span id="goal-status-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400">
+                        No Goal Set
+                    </span>
                 </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                     <div class="flex flex-col items-center justify-center">
                         <div class="relative w-48 h-48">
                             <canvas id="goalGaugeChart"></canvas>
+
                             <div class="absolute inset-0 flex flex-col items-center justify-center">
                                 <span id="goal-achievement-pct" class="text-3xl font-bold text-white">0%</span>
                                 <span class="text-xs text-slate-400 mt-1">of goal</span>
                             </div>
                         </div>
                     </div>
+
                     <div class="space-y-3 text-sm">
                         <div>
                             <p class="text-xs text-slate-400 uppercase tracking-wider">Actual</p>
                             <p id="goal-actual-value" class="text-lg font-bold text-white">$0</p>
                         </div>
+
                         <div>
                             <p class="text-xs text-slate-400 uppercase tracking-wider">Goal</p>
                             <p id="goal-target-value" class="text-lg font-bold text-slate-300">$0</p>
                         </div>
+
                         <div>
                             <p class="text-xs text-slate-400 uppercase tracking-wider">Gap to Goal</p>
                             <p id="goal-gap-value" class="text-lg font-bold text-slate-300">$0</p>
                         </div>
                     </div>
+
                     <div class="space-y-3 text-sm">
                         <div>
                             <p class="text-xs text-slate-400 uppercase tracking-wider">Expected Pace</p>
                             <p id="goal-expected-pct" class="text-lg font-bold text-slate-300">0%</p>
                             <p class="text-xs text-slate-500" id="goal-days-elapsed">0 days elapsed</p>
                         </div>
+
                         <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Projected Annual (Run Rate)</p>
+                            <p class="text-xs text-slate-400 uppercase tracking-wider">Projected Annual Run Rate</p>
                             <p id="goal-projection-value" class="text-lg font-bold text-purple-400">$0</p>
                         </div>
+
                         <div id="goal-narrative" class="text-xs text-slate-400 italic mt-2"></div>
                     </div>
                 </div>
@@ -242,28 +371,51 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-trend">Historical Core Metric Timeline</h4>
-                    <div class="h-72"><canvas id="trendChart"></canvas></div>
-                </div>
-                
-                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-segment">Segment Performance Share</h4>
-                    <div class="h-72"><canvas id="segmentChart"></canvas></div>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-trend">
+                        Historical Core Metric Timeline
+                    </h4>
+
+                    <div class="h-72">
+                        <canvas id="trendChart"></canvas>
+                    </div>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-projection">Trend Projection Matrix (Next 12 Months)</h4>
-                    <div class="h-72"><canvas id="projectionChart"></canvas></div>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-segment">
+                        Segment Performance Share
+                    </h4>
+
+                    <div class="h-72">
+                        <canvas id="segmentChart"></canvas>
+                    </div>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-season">Seasonality Profile Variance</h4>
-                    <div class="h-72"><canvas id="seasonalityChart"></canvas></div>
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-projection">
+                        Trend Projection Matrix, Next 12 Months
+                    </h4>
+
+                    <div class="h-72">
+                        <canvas id="projectionChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl">
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-4" id="title-season">
+                        Seasonality Profile Variance
+                    </h4>
+
+                    <div class="h-72">
+                        <canvas id="seasonalityChart"></canvas>
+                    </div>
                 </div>
             </div>
 
             <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
-                <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">Key Risk Exposures & Book Concentration Outliers</h4>
+                <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">
+                    Key Risk Exposures and Book Concentration Outliers
+                </h4>
+
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
@@ -273,11 +425,11 @@
                                 <th class="pb-3 pr-4">Risk Variance Reason</th>
                             </tr>
                         </thead>
+
                         <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
                     </table>
                 </div>
             </section>
-
         </div>
     </main>
 
@@ -285,7 +437,7 @@
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
         const uploadStatus = document.getElementById('upload-status');
-        
+
         let allColumns = [];
         let activeCharts = {};
         let activeMapping = {};
@@ -293,7 +445,6 @@
         let currentBusinessView = "all";
         let dateBounds = { min_date: null, max_date: null };
         let currentGoalValue = 0;
-
         let allAgencyCodes = [];
         let selectedAgencyCodes = [];
         let pendingAgencySelections = new Set();
@@ -304,27 +455,51 @@
         document.addEventListener('click', function(e) {
             const container = document.getElementById('agency-filter-container');
             const panel = document.getElementById('agency-dropdown-panel');
-            if (container && panel && !container.contains(e.target)) panel.classList.add('hidden');
+
+            if (container && panel && !container.contains(e.target)) {
+                panel.classList.add('hidden');
+            }
         });
 
         async function handleFile(file) {
             if (!file) return;
+
             uploadStatus.innerHTML = `
                 <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-teal-400 rounded-full mb-2"></div>
-                <p class="text-sm text-slate-300">Compiling ledger metadata vectors... Please wait.</p>
+                <p class="text-sm text-slate-300">Compiling ledger metadata vectors. Please wait.</p>
             `;
+
             const formData = new FormData();
             formData.append('file', file);
+
             try {
-                const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error("Server communication breakdown during ingestion.");
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error("Server communication breakdown during ingestion.");
+                }
+
                 const data = await response.json();
-                if (data.error) throw new Error(data.error);
-                allColumns = data.columns;
-                populateProfitCenterDropdown(data.profit_centers);
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                allColumns = data.columns || [];
+
+                populateProfitCenterDropdown(data.profit_centers || []);
                 populateAgencyCodes(data.agency_codes || []);
-                if (data.date_range) { dateBounds = data.date_range; applyDateBounds(dateBounds); }
-                renderMappingSelectors(data.inferred_mapping);
+
+                if (data.date_range) {
+                    dateBounds = data.date_range;
+                    applyDateBounds(dateBounds);
+                }
+
+                renderMappingSelectors(data.inferred_mapping || {});
+
             } catch (err) {
                 alert("Upload Pipeline Fault: " + err.message);
                 resetUploadZone();
@@ -336,15 +511,18 @@
                 <svg class="mx-auto h-12 w-12 text-slate-500 group-hover:text-teal-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <p class="text-sm font-medium text-slate-300">Select file path from device workspace</p>
+                <p class="text-sm font-medium text-slate-300">Select a CSV or Excel file from your device</p>
             `;
         }
 
         function populateProfitCenterDropdown(profitCenters) {
             const dropdown = document.getElementById('filter-profit-center');
             dropdown.innerHTML = '<option value="ALL">All Profit Centers combined</option>';
+
             if (profitCenters && profitCenters.length > 0) {
-                profitCenters.forEach(pc => { dropdown.innerHTML += `<option value="${pc}">${pc}</option>`; });
+                profitCenters.forEach(pc => {
+                    dropdown.innerHTML += `<option value="${pc}">${pc}</option>`;
+                });
             }
         }
 
@@ -352,7 +530,9 @@
             allAgencyCodes = codes || [];
             selectedAgencyCodes = [];
             pendingAgencySelections = new Set();
+
             const container = document.getElementById('agency-filter-container');
+
             if (allAgencyCodes.length > 0) {
                 container.classList.remove('hidden');
                 renderAgencyCheckboxList('');
@@ -364,9 +544,12 @@
 
         function toggleAgencyDropdown(event) {
             event.stopPropagation();
+
             const panel = document.getElementById('agency-dropdown-panel');
             const isOpening = panel.classList.contains('hidden');
+
             panel.classList.toggle('hidden');
+
             if (isOpening) {
                 pendingAgencySelections = new Set(selectedAgencyCodes);
                 renderAgencyCheckboxList(document.getElementById('agency-search-input').value || '');
@@ -377,102 +560,235 @@
             const list = document.getElementById('agency-checkbox-list');
             const term = (searchTerm || '').toLowerCase();
             const filtered = allAgencyCodes.filter(c => c.toLowerCase().includes(term));
+
             if (filtered.length === 0) {
                 list.innerHTML = '<p class="text-xs text-slate-500 text-center py-3">No matching agency codes.</p>';
                 return;
             }
+
             list.innerHTML = filtered.map(code => {
                 const checked = pendingAgencySelections.has(code) ? 'checked' : '';
                 const safeId = `agency-cb-${code.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const safeCode = code.replace(/'/g, "\\'");
+
                 return `
                     <label for="${safeId}" class="flex items-center px-2 py-1 rounded hover:bg-slate-900 cursor-pointer text-xs text-slate-200">
-                        <input type="checkbox" id="${safeId}" ${checked} onchange="toggleAgencyPending('${code.replace(/'/g, "\\'")}', this.checked)" class="mr-2 accent-teal-500">
+                        <input type="checkbox" id="${safeId}" ${checked} onchange="toggleAgencyPending('${safeCode}', this.checked)" class="mr-2 accent-teal-500">
                         ${code}
                     </label>
                 `;
             }).join('');
         }
 
-        function filterAgencyList() { renderAgencyCheckboxList(document.getElementById('agency-search-input').value); }
-        function toggleAgencyPending(code, isChecked) {
-            if (isChecked) pendingAgencySelections.add(code); else pendingAgencySelections.delete(code);
+        function filterAgencyList() {
+            renderAgencyCheckboxList(document.getElementById('agency-search-input').value);
         }
+
+        function toggleAgencyPending(code, isChecked) {
+            if (isChecked) {
+                pendingAgencySelections.add(code);
+            } else {
+                pendingAgencySelections.delete(code);
+            }
+        }
+
         function selectAllAgencies() {
             const term = (document.getElementById('agency-search-input').value || '').toLowerCase();
-            allAgencyCodes.filter(c => c.toLowerCase().includes(term)).forEach(c => pendingAgencySelections.add(c));
+
+            allAgencyCodes
+                .filter(c => c.toLowerCase().includes(term))
+                .forEach(c => pendingAgencySelections.add(c));
+
             renderAgencyCheckboxList(document.getElementById('agency-search-input').value);
         }
+
         function clearAllAgencies() {
             const term = (document.getElementById('agency-search-input').value || '').toLowerCase();
-            allAgencyCodes.filter(c => c.toLowerCase().includes(term)).forEach(c => pendingAgencySelections.delete(c));
+
+            allAgencyCodes
+                .filter(c => c.toLowerCase().includes(term))
+                .forEach(c => pendingAgencySelections.delete(c));
+
             renderAgencyCheckboxList(document.getElementById('agency-search-input').value);
         }
+
         function applyAgencyFilter() {
             selectedAgencyCodes = Array.from(pendingAgencySelections);
             updateAgencySummaryLabel();
+
             document.getElementById('agency-dropdown-panel').classList.add('hidden');
+
             triggerUpdate();
         }
+
         function updateAgencySummaryLabel() {
             const label = document.getElementById('agency-summary-label');
             const total = allAgencyCodes.length;
-            const sel = selectedAgencyCodes.length;
-            if (sel === 0 || sel === total) label.innerText = `All Agency Codes (${total})`;
-            else if (sel === 1) label.innerText = `1 of ${total} selected: ${selectedAgencyCodes[0]}`;
-            else label.innerText = `${sel} of ${total} selected`;
+            const selected = selectedAgencyCodes.length;
+
+            if (selected === 0 || selected === total) {
+                label.innerText = `All Agency Codes (${total})`;
+            } else if (selected === 1) {
+                label.innerText = `1 of ${total} selected: ${selectedAgencyCodes[0]}`;
+            } else {
+                label.innerText = `${selected} of ${total} selected`;
+            }
         }
 
         function applyDateBounds(bounds) {
             const startInput = document.getElementById('filter-start-date');
             const endInput = document.getElementById('filter-end-date');
-            if (bounds.min_date) { startInput.min = bounds.min_date; startInput.max = bounds.max_date; startInput.value = bounds.min_date; }
-            if (bounds.max_date) { endInput.min = bounds.min_date; endInput.max = bounds.max_date; endInput.value = bounds.max_date; }
+
+            if (bounds.min_date) {
+                startInput.min = bounds.min_date;
+                startInput.max = bounds.max_date;
+                startInput.value = bounds.min_date;
+            }
+
+            if (bounds.max_date) {
+                endInput.min = bounds.min_date;
+                endInput.max = bounds.max_date;
+                endInput.value = bounds.max_date;
+            }
+
             updateActiveRangeIndicator();
         }
-        function resetDateRange() { applyDateBounds(dateBounds); triggerUpdate(); }
+
+        function resetDateRange() {
+            applyDateBounds(dateBounds);
+            triggerUpdate();
+        }
+
         function updateActiveRangeIndicator() {
             const indicator = document.getElementById('active-range-indicator');
             const start = document.getElementById('filter-start-date').value;
             const end = document.getElementById('filter-end-date').value;
+
             indicator.innerText = (start && end) ? `Analysis Window: ${start} through ${end}` : '';
         }
 
         function renderMappingSelectors(inferred) {
             document.getElementById('upload-card').classList.add('hidden');
+
             const target = document.getElementById('mapping-selectors');
             target.innerHTML = '';
+
             const fields = [
                 { id: 'financial_metric', label: 'Financial Revenue Core Field', required: true },
                 { id: 'timeline_metric', label: 'Timeline Index Dimension', required: true },
-                { id: 'profit_center', label: 'Profit Center Grouping Field' },
-                { id: 'agency_code', label: 'Agency Code Field (optional)' },
-                { id: 'business_type', label: 'Business Type Column (optional, else derived)' },
-                { id: 'categorical_segment', label: 'Portfolio Slice Categorization (Broker/LOB)' },
-                { id: 'client_id', label: 'Account Identity Field' }
+                { id: 'profit_center', label: 'Profit Center Grouping Field', required: false },
+                { id: 'agency_code', label: 'Agency Code Field, Optional', required: false },
+                { id: 'business_type', label: 'Business Type Column, Optional', required: false },
+                { id: 'categorical_segment', label: 'Portfolio Slice Categorization', required: false },
+                { id: 'client_id', label: 'Account Identity Field', required: false }
             ];
+
             fields.forEach(field => {
-                const nonePrefix = field.required ? '' : `<option value="" ${!inferred[field.id] ? 'selected' : ''}>-- Not Applicable --</option>`;
-                let optionsHtml = allColumns.map(col => 
-                    `<option value="${col}" ${inferred[field.id] === col ? 'selected' : ''}>${col}</option>`
-                ).join('');
+                const nonePrefix = field.required
+                    ? ''
+                    : `<option value="" ${!inferred[field.id] ? 'selected' : ''}>-- Not Applicable --</option>`;
+
+                const optionsHtml = allColumns.map(col => {
+                    const selected = inferred[field.id] === col ? 'selected' : '';
+                    return `<option value="${col}" ${selected}>${col}</option>`;
+                }).join('');
+
                 target.innerHTML += `
                     <div>
-                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">${field.label}</label>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                            ${field.label}
+                        </label>
+
                         <select id="map-${field.id}" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-100 focus:border-teal-500">
                             ${nonePrefix}${optionsHtml}
                         </select>
                     </div>
                 `;
             });
+
             document.getElementById('mapping-card').classList.remove('hidden');
+        }
+
+        async function submitMapping() {
+            activeMapping = {
+                financial_metric: document.getElementById('map-financial_metric').value,
+                timeline_metric: document.getElementById('map-timeline_metric').value,
+                profit_center: document.getElementById('map-profit_center').value || null,
+                categorical_segment: document.getElementById('map-categorical_segment').value || null,
+                client_id: document.getElementById('map-client_id').value || null,
+                agency_code: document.getElementById('map-agency_code').value || null,
+                business_type: document.getElementById('map-business_type').value || null
+            };
+
+            try {
+                if (activeMapping.profit_center) {
+                    const pcResponse = await fetch('/api/profit-centers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            profit_center_column: activeMapping.profit_center
+                        })
+                    });
+
+                    if (pcResponse.ok) {
+                        const pcData = await pcResponse.json();
+                        populateProfitCenterDropdown(pcData.profit_centers || []);
+                    }
+                }
+
+                if (activeMapping.agency_code) {
+                    const acResponse = await fetch('/api/agency-codes', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            agency_code_column: activeMapping.agency_code
+                        })
+                    });
+
+                    if (acResponse.ok) {
+                        const acData = await acResponse.json();
+                        populateAgencyCodes(acData.agency_codes || []);
+                    }
+                } else {
+                    populateAgencyCodes([]);
+                }
+
+                const drResponse = await fetch('/api/date-range', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        timeline_column: activeMapping.timeline_metric
+                    })
+                });
+
+                if (drResponse.ok) {
+                    const drData = await drResponse.json();
+
+                    if (drData && drData.min_date) {
+                        dateBounds = drData;
+                        applyDateBounds(dateBounds);
+                    }
+                }
+
+            } catch (err) {
+                console.warn("Mapping refresh soft-failed:", err);
+            }
+
+            document.getElementById('mapping-card').classList.add('hidden');
+            document.getElementById('workspace-dashboard').classList.remove('hidden');
+
+            triggerUpdate();
         }
 
         function setMetricTarget(target) {
             if (currentMetricTarget === target) return;
+
             currentMetricTarget = target;
+
             const btnPremium = document.getElementById('toggle-metric-premium');
             const btnCount = document.getElementById('toggle-metric-count');
             const goalLabel = document.getElementById('goal-input-label');
+
             if (target === 'premium') {
                 btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
                 btnCount.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
@@ -482,87 +798,57 @@
                 btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
                 goalLabel.innerText = "Annual Goal (# of Policies)";
             }
+
             triggerUpdate();
         }
 
         function setBusinessView(view) {
             if (currentBusinessView === view) return;
+
             currentBusinessView = view;
+
             ['all', 'new', 'renewal'].forEach(v => {
                 const btn = document.getElementById(`view-${v}`);
+
                 if (v === view) {
                     btn.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
                 } else {
                     btn.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
                 }
             });
+
             triggerUpdate();
         }
 
         function applyGoal() {
             const raw = document.getElementById('filter-goal-value').value;
             currentGoalValue = raw ? parseFloat(raw) : 0;
-            triggerUpdate();
-        }
 
-        async function submitMapping() {
-            activeMapping = {
-                financial_metric: document.getElementById('map-financial_metric').value,
-                timeline_metric: document.getElementById('map-timeline_metric').value,
-                profit_center: document.getElementById('map-profit_center').value,
-                categorical_segment: document.getElementById('map-categorical_segment').value,
-                client_id: document.getElementById('map-client_id').value,
-                agency_code: document.getElementById('map-agency_code').value || null,
-                business_type: document.getElementById('map-business_type').value || null
-            };
-            try {
-                const pcResponse = await fetch('/api/profit-centers', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ profit_center_column: activeMapping.profit_center })
-                });
-                if (pcResponse.ok) {
-                    const pcData = await pcResponse.json();
-                    if (pcData.profit_centers) populateProfitCenterDropdown(pcData.profit_centers);
-                }
-            } catch (err) { console.warn("PC refresh soft-failed:", err); }
-            if (activeMapping.agency_code) {
-                try {
-                    const acResponse = await fetch('/api/agency-codes', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ agency_code_column: activeMapping.agency_code })
-                    });
-                    if (acResponse.ok) {
-                        const acData = await acResponse.json();
-                        populateAgencyCodes(acData.agency_codes || []);
-                    }
-                } catch (err) { console.warn("Agency refresh soft-failed:", err); }
-            } else { populateAgencyCodes([]); }
-            try {
-                const drResponse = await fetch('/api/date-range', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ timeline_column: activeMapping.timeline_metric })
-                });
-                if (drResponse.ok) {
-                    const drData = await drResponse.json();
-                    if (drData && drData.min_date) { dateBounds = drData; applyDateBounds(dateBounds); }
-                }
-            } catch (err) { console.warn("Date range refresh soft-failed:", err); }
-            document.getElementById('mapping-card').classList.add('hidden');
-            document.getElementById('workspace-dashboard').classList.remove('hidden');
             triggerUpdate();
         }
 
         async function triggerUpdate() {
+            if (!activeMapping || !activeMapping.financial_metric || !activeMapping.timeline_metric) {
+                return;
+            }
+
             const selectedPC = document.getElementById('filter-profit-center').value;
             const startDate = document.getElementById('filter-start-date').value;
             const endDate = document.getElementById('filter-end-date').value;
             const includeFuture = document.getElementById('toggle-future-dates').checked;
+
             const unitLabel = currentMetricTarget === "premium" ? "Premium ($)" : "Policy Count (#)";
+
             updateActiveRangeIndicator();
+
             document.getElementById('future-toggle-label').innerText = includeFuture
-                ? "Including future effective dates (Datalake View)"
+                ? "Including future effective dates"
                 : "Include future effective dates";
-            const viewLabel = currentBusinessView === "all" ? "" : ` — ${currentBusinessView === "new" ? "New Business Only" : "Renewals Only"}`;
+
+            const viewLabel = currentBusinessView === "all"
+                ? ""
+                : `, ${currentBusinessView === "new" ? "New Business Only" : "Renewals Only"}`;
+
             document.getElementById('title-trend').innerText = `Historical ${unitLabel} Monthly Trend${viewLabel}`;
             document.getElementById('title-segment').innerText = `Segment Allocation Performance (${unitLabel})${viewLabel}`;
             document.getElementById('title-projection').innerText = `Expected 12-Month ${unitLabel} Model Projections${viewLabel}`;
@@ -570,8 +856,9 @@
 
             try {
                 const response = await fetch('/api/analyze', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
                         mapping: activeMapping,
                         profit_center: selectedPC,
                         projection_target: currentMetricTarget,
@@ -583,100 +870,194 @@
                         business_view: currentBusinessView
                     })
                 });
-                if (!response.ok) throw new Error("Engine threw an error processing metrics array matrix.");
+
+                if (!response.ok) {
+                    throw new Error("Engine threw an error processing metrics array matrix.");
+                }
+
                 const analysisResults = await response.json();
-                if (analysisResults.error) throw new Error(analysisResults.error);
+
+                if (analysisResults.error) {
+                    throw new Error(analysisResults.error);
+                }
+
                 displayDashboard(analysisResults);
+
             } catch (err) {
                 alert("Analytical Refresh Exception: " + err.message);
             }
         }
 
         function formatValueByMetric(val, metric) {
+            const safeVal = Number(val || 0);
+
             if (metric === "premium") {
-                return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    maximumFractionDigits: 0
+                }).format(safeVal);
             }
-            return Math.round(val).toLocaleString();
+
+            return Math.round(safeVal).toLocaleString();
         }
 
         function displayDashboard(res) {
-            document.getElementById('kpi-premium').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.total_premium);
-            document.getElementById('kpi-accounts').innerText = res.kpis.total_accounts.toLocaleString();
-            document.getElementById('kpi-avg-size').innerText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.kpis.avg_account_size);
-            document.getElementById('kpi-retention').innerText = res.kpis.retention_rate.toFixed(1) + "%";
-            document.getElementById('kpi-hhi').innerText = Math.round(res.kpis.hhi_index).toLocaleString();
+            document.getElementById('kpi-premium').innerText = formatValueByMetric(res.kpis.total_premium, "premium");
+            document.getElementById('kpi-accounts').innerText = Number(res.kpis.total_accounts || 0).toLocaleString();
+            document.getElementById('kpi-avg-size').innerText = formatValueByMetric(res.kpis.avg_account_size, "premium");
+            document.getElementById('kpi-retention').innerText = Number(res.kpis.retention_rate || 0).toFixed(1) + "%";
+            document.getElementById('kpi-hhi').innerText = Math.round(Number(res.kpis.hhi_index || 0)).toLocaleString();
 
-            const diag = document.getElementById('future-date-diagnostic');
+            const diagnostic = document.getElementById('future-date-diagnostic');
+
             if (res.diagnostics && !res.diagnostics.include_future_dates && res.diagnostics.future_records_removed > 0) {
-                const amt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(res.diagnostics.future_dollar_amount);
-                const cnt = res.diagnostics.future_records_removed.toLocaleString();
-                diag.innerText = `Reconciliation Note: ${cnt} future-dated record${cnt === "1" ? "" : "s"} totaling ${amt} excluded from BOB view. Toggle "Include future effective dates" to match Datalake totals.`;
-                diag.classList.remove('hidden');
+                const amount = formatValueByMetric(res.diagnostics.future_dollar_amount, "premium");
+                const count = Number(res.diagnostics.future_records_removed || 0).toLocaleString();
+
+                diagnostic.innerText = `Reconciliation Note: ${count} future-dated records totaling ${amount} excluded from BOB view. Toggle Include future effective dates to match forward-looking totals.`;
+                diagnostic.classList.remove('hidden');
             } else {
-                diag.classList.add('hidden');
-                diag.innerText = '';
+                diagnostic.classList.add('hidden');
+                diagnostic.innerText = '';
             }
 
             renderBusinessSplit(res.business_split);
             renderGoalGauge(res.goal_progress);
-
-            const tableBody = document.getElementById('anomaly-table-rows');
-            if (res.anomalies && res.anomalies.length > 0) {
-                tableBody.innerHTML = res.anomalies.map(item => `
-                    <tr class="hover:bg-slate-900/40 font-mono text-xs">
-                        <td class="py-3 pl-4 text-slate-200">${item.identifier}</td>
-                        <td class="py-3 text-red-400 font-semibold">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.value)}</td>
-                        <td class="py-3 text-slate-400 pr-4">${item.reason}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tableBody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-xs">No heavy account concentration variances observed within selected profile constraints.</td></tr>`;
-            }
-
+            renderForecastOutlook(res.forecast_outlook);
+            renderAnomalies(res.anomalies);
             renderTrendChart(res.historical_timeline);
             renderSegmentChart(res.segment_distribution);
             renderProjectionChart(res.projections);
             renderSeasonalityChart(res.seasonality);
         }
 
+        function renderForecastOutlook(fo) {
+            if (!fo) return;
+
+            const metric = fo.metric_type || currentMetricTarget;
+
+            const currentActual = Number(fo.current_actual || 0);
+            const projectedYearEnd = Number(fo.projected_year_end || 0);
+            const conservative = Number(fo.conservative_year_end || 0);
+            const aggressive = Number(fo.aggressive_year_end || 0);
+            const growthPct = Number(fo.growth_vs_previous_year_pct || 0);
+            const gapToGoal = Number(fo.projected_gap_to_goal || 0);
+
+            document.getElementById('forecast-current-actual').innerText = formatValueByMetric(currentActual, metric);
+            document.getElementById('forecast-year-end').innerText = formatValueByMetric(projectedYearEnd, metric);
+            document.getElementById('forecast-range').innerText = `${formatValueByMetric(conservative, metric)} - ${formatValueByMetric(aggressive, metric)}`;
+
+            const growthEl = document.getElementById('forecast-growth');
+            growthEl.innerText = `${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`;
+            growthEl.className = "text-xl font-bold mt-1 " + (growthPct >= 0 ? "text-emerald-400" : "text-red-400");
+
+            document.getElementById('forecast-goal-status').innerText = fo.goal_status || "No Goal Set";
+
+            const gapEl = document.getElementById('forecast-goal-gap');
+            gapEl.innerText = `${gapToGoal >= 0 ? '+' : '-'}${formatValueByMetric(Math.abs(gapToGoal), metric)}`;
+            gapEl.className = "text-lg font-bold mt-1 " + (gapToGoal >= 0 ? "text-emerald-400" : "text-red-400");
+
+            const trendEl = document.getElementById('forecast-trend-direction');
+            trendEl.innerText = fo.trend_direction || "Flat";
+
+            if (fo.trend_direction === "Increasing") {
+                trendEl.className = "text-lg font-bold text-emerald-400 mt-1";
+            } else if (fo.trend_direction === "Decreasing") {
+                trendEl.className = "text-lg font-bold text-red-400 mt-1";
+            } else {
+                trendEl.className = "text-lg font-bold text-slate-300 mt-1";
+            }
+
+            const badge = document.getElementById('forecast-confidence-badge');
+            const confidenceLabel = fo.confidence_label || "Insufficient Data";
+            const confidenceScore = Number(fo.confidence_score || 0);
+
+            if (confidenceLabel === "High") {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400";
+            } else if (confidenceLabel === "Moderate") {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/20 text-amber-400";
+            } else {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-red-500/20 text-red-400";
+            }
+
+            badge.innerText = `Confidence: ${confidenceLabel} (${confidenceScore.toFixed(1)}%)`;
+
+            document.getElementById('forecast-executive-summary').innerText =
+                fo.executive_summary || "Not enough data is available to produce a reliable year-end projection.";
+        }
+
         function renderBusinessSplit(bs) {
             if (!bs) return;
+
             const metric = currentMetricTarget;
-            const nbVal = metric === "premium" ? bs.new_business_premium : bs.new_business_count;
-            const renVal = metric === "premium" ? bs.renewal_premium : bs.renewal_count;
+
+            const nbVal = metric === "premium" ? Number(bs.new_business_premium || 0) : Number(bs.new_business_count || 0);
+            const renVal = metric === "premium" ? Number(bs.renewal_premium || 0) : Number(bs.renewal_count || 0);
             const total = nbVal + renVal;
+
             const nbShare = total > 0 ? (nbVal / total * 100) : 0;
             const renShare = total > 0 ? (renVal / total * 100) : 0;
+
             document.getElementById('nb-premium').innerText = formatValueByMetric(nbVal, metric);
             document.getElementById('ren-premium').innerText = formatValueByMetric(renVal, metric);
-            document.getElementById('nb-count').innerText = `${bs.new_business_count.toLocaleString()} policies`;
-            document.getElementById('ren-count').innerText = `${bs.renewal_count.toLocaleString()} policies`;
+
+            document.getElementById('nb-count').innerText = `${Number(bs.new_business_count || 0).toLocaleString()} policies`;
+            document.getElementById('ren-count').innerText = `${Number(bs.renewal_count || 0).toLocaleString()} policies`;
+
             document.getElementById('nb-share').innerText = `${nbShare.toFixed(1)}% of book`;
             document.getElementById('ren-share').innerText = `${renShare.toFixed(1)}% of book`;
+
             const methodBadge = document.getElementById('classification-method-badge');
+
             const methodMap = {
-                'explicit': { text: 'Classification: Explicit Column', cls: 'bg-teal-500/20 text-teal-400' },
-                'derived':  { text: 'Classification: Derived (first-seen date)', cls: 'bg-purple-500/20 text-purple-400' },
-                'none':     { text: 'Classification: Not Available', cls: 'bg-slate-800 text-slate-400' }
+                explicit: {
+                    text: 'Classification: Explicit Column',
+                    cls: 'bg-teal-500/20 text-teal-400'
+                },
+                derived: {
+                    text: 'Classification: Derived, First-Seen Date',
+                    cls: 'bg-purple-500/20 text-purple-400'
+                },
+                none: {
+                    text: 'Classification: Not Available',
+                    cls: 'bg-slate-800 text-slate-400'
+                }
             };
-            const m = methodMap[bs.classification_method] || methodMap.none;
-            methodBadge.className = `text-xs font-medium px-3 py-1 rounded-full ${m.cls}`;
-            methodBadge.innerText = m.text;
+
+            const method = methodMap[bs.classification_method] || methodMap.none;
+
+            methodBadge.className = `text-xs font-medium px-3 py-1 rounded-full ${method.cls}`;
+            methodBadge.innerText = method.text;
+
             initChartInstance('businessSplitChart', {
                 type: 'doughnut',
                 data: {
                     labels: ['New Business', 'Renewal'],
-                    datasets: [{ data: [nbVal, renVal], backgroundColor: ['#14b8a6', '#3b82f6'], borderWidth: 0, cutout: '65%' }]
+                    datasets: [{
+                        data: [nbVal, renVal],
+                        backgroundColor: ['#14b8a6', '#3b82f6'],
+                        borderWidth: 0,
+                        cutout: '65%'
+                    }]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
-                        legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 } } },
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { size: 11 }
+                            }
+                        },
                         tooltip: {
                             callbacks: {
                                 label: (ctx) => {
                                     const val = ctx.parsed;
                                     const pct = total > 0 ? (val / total * 100).toFixed(1) : 0;
+
                                     return `${ctx.label}: ${formatValueByMetric(val, metric)} (${pct}%)`;
                                 }
                             }
@@ -687,25 +1068,54 @@
         }
 
         function renderGoalGauge(gp) {
+            if (!gp) return;
+
             const metric = gp.metric_type || currentMetricTarget;
+
             const statusColors = {
-                ahead:      { ring: '#10b981', bg: 'bg-emerald-500/20 text-emerald-400', label: 'Ahead of Pace' },
-                on_pace:    { ring: '#f59e0b', bg: 'bg-amber-500/20 text-amber-400',     label: 'On Pace' },
-                behind:     { ring: '#ef4444', bg: 'bg-red-500/20 text-red-400',         label: 'Behind Pace' },
-                no_goal_set:{ ring: '#475569', bg: 'bg-slate-800 text-slate-400',        label: 'No Goal Set' },
-                no_time_elapsed: { ring: '#475569', bg: 'bg-slate-800 text-slate-400',   label: 'Insufficient Data' }
+                ahead: {
+                    ring: '#10b981',
+                    bg: 'bg-emerald-500/20 text-emerald-400',
+                    label: 'Ahead of Pace'
+                },
+                on_pace: {
+                    ring: '#f59e0b',
+                    bg: 'bg-amber-500/20 text-amber-400',
+                    label: 'On Pace'
+                },
+                behind: {
+                    ring: '#ef4444',
+                    bg: 'bg-red-500/20 text-red-400',
+                    label: 'Behind Pace'
+                },
+                no_goal_set: {
+                    ring: '#475569',
+                    bg: 'bg-slate-800 text-slate-400',
+                    label: 'No Goal Set'
+                },
+                no_time_elapsed: {
+                    ring: '#475569',
+                    bg: 'bg-slate-800 text-slate-400',
+                    label: 'Insufficient Data'
+                }
             };
+
             const cfg = statusColors[gp.status] || statusColors.no_goal_set;
-            const achievement = Math.max(0, gp.achievement_pct || 0);
+
+            const achievement = Math.max(0, Number(gp.achievement_pct || 0));
             const displayPct = Math.min(achievement, 100);
+
             const badge = document.getElementById('goal-status-badge');
             badge.className = `text-xs font-semibold px-3 py-1 rounded-full ${cfg.bg}`;
             badge.innerText = cfg.label;
+
             document.getElementById('goal-achievement-pct').innerText = `${achievement.toFixed(1)}%`;
             document.getElementById('goal-actual-value').innerText = formatValueByMetric(gp.actual, metric);
             document.getElementById('goal-target-value').innerText = gp.goal > 0 ? formatValueByMetric(gp.goal, metric) : "—";
-            const gap = gp.gap_to_goal;
+
+            const gap = Number(gp.gap_to_goal || 0);
             const gapEl = document.getElementById('goal-gap-value');
+
             if (gp.goal > 0) {
                 gapEl.innerText = (gap >= 0 ? "+" : "-") + formatValueByMetric(Math.abs(gap), metric);
                 gapEl.className = "text-lg font-bold " + (gap >= 0 ? "text-emerald-400" : "text-red-400");
@@ -713,79 +1123,280 @@
                 gapEl.innerText = "—";
                 gapEl.className = "text-lg font-bold text-slate-300";
             }
-            document.getElementById('goal-expected-pct').innerText = `${(gp.expected_pct || 0).toFixed(1)}%`;
-            document.getElementById('goal-days-elapsed').innerText = `${(gp.days_elapsed || 0).toLocaleString()} days elapsed`;
+
+            document.getElementById('goal-expected-pct').innerText = `${Number(gp.expected_pct || 0).toFixed(1)}%`;
+            document.getElementById('goal-days-elapsed').innerText = `${Number(gp.days_elapsed || 0).toLocaleString()} days elapsed`;
             document.getElementById('goal-projection-value').innerText = formatValueByMetric(gp.projected_year_end || 0, metric);
-            const narr = document.getElementById('goal-narrative');
-            if (gp.status === 'no_goal_set') narr.innerText = 'Enter a goal above to see pacing analysis.';
-            else if (gp.status === 'ahead') narr.innerText = `Currently outpacing the pro-rated target by ${(achievement - gp.expected_pct).toFixed(1)} points.`;
-            else if (gp.status === 'on_pace') narr.innerText = 'Tracking within acceptable range of expected pacing.';
-            else if (gp.status === 'behind') narr.innerText = `Trailing pro-rated pace by ${(gp.expected_pct - achievement).toFixed(1)} points. Projected annual falls ${formatValueByMetric(Math.max(0, gp.goal - gp.projected_year_end), metric)} short of goal.`;
-            else narr.innerText = 'Not enough time elapsed to compute pace.';
+
+            const narrative = document.getElementById('goal-narrative');
+
+            if (gp.status === 'no_goal_set') {
+                narrative.innerText = 'Enter a goal above to see pacing analysis.';
+            } else if (gp.status === 'ahead') {
+                narrative.innerText = `Currently outpacing the pro-rated target by ${(achievement - Number(gp.expected_pct || 0)).toFixed(1)} points.`;
+            } else if (gp.status === 'on_pace') {
+                narrative.innerText = 'Tracking within acceptable range of expected pacing.';
+            } else if (gp.status === 'behind') {
+                narrative.innerText = `Trailing pro-rated pace by ${(Number(gp.expected_pct || 0) - achievement).toFixed(1)} points.`;
+            } else {
+                narrative.innerText = 'Not enough time elapsed to compute pace.';
+            }
+
             initChartInstance('goalGaugeChart', {
                 type: 'doughnut',
-                data: { datasets: [{ data: [displayPct, 100 - displayPct], backgroundColor: [cfg.ring, '#1e293b'], borderWidth: 0, cutout: '75%', circumference: 360, rotation: 0 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+                data: {
+                    datasets: [{
+                        data: [displayPct, 100 - displayPct],
+                        backgroundColor: [cfg.ring, '#1e293b'],
+                        borderWidth: 0,
+                        cutout: '75%',
+                        circumference: 360,
+                        rotation: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    }
+                }
             });
         }
 
+        function renderAnomalies(anomalies) {
+            const tableBody = document.getElementById('anomaly-table-rows');
+
+            if (anomalies && anomalies.length > 0) {
+                tableBody.innerHTML = anomalies.map(item => `
+                    <tr class="hover:bg-slate-900/40 font-mono text-xs">
+                        <td class="py-3 pl-4 text-slate-200">${item.identifier}</td>
+                        <td class="py-3 text-red-400 font-semibold">${formatValueByMetric(item.value, "premium")}</td>
+                        <td class="py-3 text-slate-400 pr-4">${item.reason}</td>
+                    </tr>
+                `).join('');
+            } else {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="py-4 text-center text-slate-500 text-xs">
+                            No heavy account concentration variances observed within selected profile constraints.
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
         function initChartInstance(ctxId, configuration) {
-            if (activeCharts[ctxId]) { activeCharts[ctxId].destroy(); delete activeCharts[ctxId]; }
+            if (activeCharts[ctxId]) {
+                activeCharts[ctxId].destroy();
+                delete activeCharts[ctxId];
+            }
+
             const el = document.getElementById(ctxId);
-            if (el) { const ctx = el.getContext('2d'); activeCharts[ctxId] = new Chart(ctx, configuration); }
+
+            if (el) {
+                const ctx = el.getContext('2d');
+                activeCharts[ctxId] = new Chart(ctx, configuration);
+            }
         }
 
         function renderTrendChart(timeline) {
-            const labelStr = currentMetricTarget === "premium" ? 'Observed Monthly Premium' : 'Observed Policy Count';
+            const safeTimeline = timeline || {
+                labels: [],
+                values: [],
+                rolling_avg: [],
+                new_values: [],
+                renewal_values: []
+            };
+
+            const labelStr = currentMetricTarget === "premium"
+                ? 'Observed Monthly Premium'
+                : 'Observed Policy Count';
+
             const showSplitOverlays = currentBusinessView === "all";
+
             const datasets = [
-                { label: labelStr, data: timeline.values || [], borderColor: '#14b8a6', backgroundColor: 'rgba(20, 184, 166, 0.1)', fill: true, tension: 0.1 },
-                { label: '3-Period Rolling Mean', data: timeline.rolling_avg || [], borderColor: '#94a3b8', borderDash: [5, 5], fill: false, tension: 0.1 }
+                {
+                    label: labelStr,
+                    data: safeTimeline.values || [],
+                    borderColor: '#14b8a6',
+                    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                },
+                {
+                    label: '3-Period Rolling Mean',
+                    data: safeTimeline.rolling_avg || [],
+                    borderColor: '#94a3b8',
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0.1
+                }
             ];
-            if (showSplitOverlays && timeline.new_values && timeline.renewal_values) {
-                datasets.push({ label: 'New Business', data: timeline.new_values, borderColor: '#10b981', borderDash: [3, 3], fill: false, tension: 0.1, pointRadius: 2 });
-                datasets.push({ label: 'Renewal', data: timeline.renewal_values, borderColor: '#3b82f6', borderDash: [3, 3], fill: false, tension: 0.1, pointRadius: 2 });
+
+            if (showSplitOverlays && safeTimeline.new_values && safeTimeline.renewal_values) {
+                datasets.push({
+                    label: 'New Business',
+                    data: safeTimeline.new_values,
+                    borderColor: '#10b981',
+                    borderDash: [3, 3],
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 2
+                });
+
+                datasets.push({
+                    label: 'Renewal',
+                    data: safeTimeline.renewal_values,
+                    borderColor: '#3b82f6',
+                    borderDash: [3, 3],
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 2
+                });
             }
+
             initChartInstance('trendChart', {
                 type: 'line',
-                data: { labels: timeline.labels || [], datasets: datasets },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#94a3b8' } } } }
+                data: {
+                    labels: safeTimeline.labels || [],
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#94a3b8' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        }
+                    }
+                }
             });
         }
 
         function renderSegmentChart(distribution) {
+            const labels = distribution ? Object.keys(distribution) : [];
+            const values = distribution ? Object.values(distribution) : [];
+
             initChartInstance('segmentChart', {
                 type: 'bar',
                 data: {
-                    labels: distribution ? Object.keys(distribution) : [],
-                    datasets: [{ label: 'Metric Volume Split', data: distribution ? Object.values(distribution) : [], backgroundColor: '#3b82f6' }]
+                    labels: labels,
+                    datasets: [{
+                        label: 'Metric Volume Split',
+                        data: values,
+                        backgroundColor: '#3b82f6'
+                    }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        }
+                    }
+                }
             });
         }
 
         function renderProjectionChart(proj) {
+            const safeProj = proj || [];
+
             initChartInstance('projectionChart', {
                 type: 'line',
                 data: {
-                    labels: proj ? proj.map(p => p.period) : [],
-                    datasets: [{ label: 'Expected Linear Baseline Model', data: proj ? proj.map(p => p.projected_value) : [], borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.2 }]
+                    labels: safeProj.map(p => p.period),
+                    datasets: [{
+                        label: 'Expected Linear Baseline Model',
+                        data: safeProj.map(p => p.projected_value),
+                        borderColor: '#a855f7',
+                        backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        fill: true,
+                        tension: 0.2
+                    }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#94a3b8' } } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#94a3b8' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        }
+                    }
+                }
             });
         }
 
         function renderSeasonalityChart(season) {
-            const monthsOrder = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const monthsOrder = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+
             const labels = season ? monthsOrder.filter(m => season[m] !== undefined) : [];
             const data = season ? labels.map(m => season[m]) : [];
+
             initChartInstance('seasonalityChart', {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{ label: 'Mean Distribution Core Concentration', data: data, borderColor: '#e2e8f0', tension: 0.3 }]
+                    datasets: [{
+                        label: 'Mean Distribution Core Concentration',
+                        data: data,
+                        borderColor: '#e2e8f0',
+                        backgroundColor: 'rgba(226, 232, 240, 0.08)',
+                        fill: true,
+                        tension: 0.3
+                    }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: '#1e293b' }
+                        }
+                    }
+                }
             });
         }
     </script>
