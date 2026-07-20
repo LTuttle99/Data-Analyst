@@ -4,8 +4,8 @@ import traceback
 import uuid
 from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from analyzer import BookOfBusinessAnalyzer
@@ -18,19 +18,6 @@ logger = logging.getLogger("book_of_business")
 DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 
 app = FastAPI(title="Book of Business Intelligent Analyzer")
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """
-    FastAPI's default HTTPException handler returns {"detail": "..."}, but every other
-    error path in this app returns {"error": "..."} (see error_response below). Without this,
-    HTTPExceptions raised via get_active_analyzer() — e.g. "no file uploaded yet" — reach the
-    client in a shape the frontend doesn't check, so the real reason silently gets swallowed
-    and the user just sees a generic "(HTTP 400)" message instead of what actually went wrong.
-    """
-    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
-
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -96,27 +83,31 @@ class SuggestGoalsRequest(BaseModel):
 
 # --------------------------------------------------------------------------- #
 # Session helpers
+#
+# IMPORTANT: FastAPI only auto-merges cookies/headers set on an injected
+# `response: Response` parameter into the final response when the endpoint
+# returns something FastAPI has to serialize itself (a dict/model). If the
+# endpoint constructs and returns its own Response/JSONResponse directly —
+# which every route here does — that merge never happens and the cookie is
+# silently dropped. So instead, every route calls `stamp_session_cookie()` on
+# the *actual* response object it returns, in both success and error paths.
 # --------------------------------------------------------------------------- #
 
-def get_or_create_session_id(request: Request, response: Response) -> str:
-    """
-    Each browser gets its own session id (a cookie), so concurrent users don't
-    clobber each other's uploaded file. Sessions expire after 24h of inactivity.
-    """
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+def get_session_id(request: Request) -> str:
+    """Read the existing session cookie, or mint a new one for this request."""
+    return request.cookies.get(SESSION_COOKIE_NAME) or uuid.uuid4().hex
 
-    if not session_id:
-        session_id = uuid.uuid4().hex
 
-    response.set_cookie(
+def stamp_session_cookie(resp: Response, session_id: str) -> Response:
+    """Attach the session cookie directly to the response object being returned."""
+    resp.set_cookie(
         SESSION_COOKIE_NAME,
         session_id,
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24
     )
-
-    return session_id
+    return resp
 
 
 def _store_in_cache(cache: dict, session_id: str, analyzer: BookOfBusinessAnalyzer) -> None:
@@ -162,26 +153,43 @@ def _model_to_dict(model: BaseModel) -> dict:
     return model.dict()
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Two things this fixes vs. FastAPI's default handler:
+    1. Returns {"error": ...} instead of {"detail": ...}, matching every other error path
+       in this app, so the frontend's error-message extraction actually finds it.
+    2. Stamps the session cookie even on error responses, so a session established on a
+       failing request still works correctly on the next one.
+    """
+    session_id = get_session_id(request)
+    resp = JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+    return stamp_session_cookie(resp, session_id)
+
+
 # --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
 
 @app.get("/api/health")
-async def health_check(request: Request, response: Response):
-    session_id = get_or_create_session_id(request, response)
+async def health_check(request: Request):
+    session_id = get_session_id(request)
 
-    return JSONResponse(content={
+    resp = JSONResponse(content={
         "status": "ok",
         "service": "Book of Business Intelligent Analyzer",
         "primary_active": session_id in PRIMARY_CACHE,
         "compare_active": session_id in COMPARE_CACHE
     })
 
+    return stamp_session_cookie(resp, session_id)
+
 
 @app.post("/api/upload")
-async def upload_file(request: Request, response: Response, file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...)):
+    session_id = get_session_id(request)
+
     try:
-        session_id = get_or_create_session_id(request, response)
         contents = await file.read()
 
         if not contents:
@@ -196,17 +204,20 @@ async def upload_file(request: Request, response: Response, file: UploadFile = F
         # since it was likely set up to compare against the previous primary file.
         COMPARE_CACHE.pop(session_id, None)
 
-        return JSONResponse(content=schema)
+        resp = JSONResponse(content=schema)
 
     except Exception as e:
-        return error_response(e, status_code=400)
+        resp = error_response(e, status_code=400)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/compare-upload")
-async def upload_compare_file(request: Request, response: Response, file: UploadFile = File(...)):
+async def upload_compare_file(request: Request, file: UploadFile = File(...)):
     """Upload a second file (e.g. last month's export) to compare against the primary one."""
+    session_id = get_session_id(request)
+
     try:
-        session_id = get_or_create_session_id(request, response)
         contents = await file.read()
 
         if not contents:
@@ -217,78 +228,89 @@ async def upload_compare_file(request: Request, response: Response, file: Upload
 
         _store_in_cache(COMPARE_CACHE, session_id, analyzer)
 
-        return JSONResponse(content=schema)
+        resp = JSONResponse(content=schema)
 
     except Exception as e:
-        return error_response(e, status_code=400)
+        resp = error_response(e, status_code=400)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/profit-centers")
-async def refresh_profit_centers(body: ProfitCenterRequest, request: Request, response: Response):
-    try:
-        session_id = get_or_create_session_id(request, response)
-        analyzer = get_active_analyzer(session_id)
+async def refresh_profit_centers(body: ProfitCenterRequest, request: Request):
+    session_id = get_session_id(request)
 
-        return JSONResponse(content={
+    try:
+        analyzer = get_active_analyzer(session_id)
+        resp = JSONResponse(content={
             "profit_centers": analyzer.get_profit_centers(body.profit_center_column)
         })
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/agency-codes")
-async def refresh_agency_codes(body: AgencyCodeRequest, request: Request, response: Response):
-    try:
-        session_id = get_or_create_session_id(request, response)
-        analyzer = get_active_analyzer(session_id)
+async def refresh_agency_codes(body: AgencyCodeRequest, request: Request):
+    session_id = get_session_id(request)
 
-        return JSONResponse(content={
+    try:
+        analyzer = get_active_analyzer(session_id)
+        resp = JSONResponse(content={
             "agency_codes": analyzer.get_agency_codes(body.agency_code_column)
         })
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/column-values")
-async def column_values(body: ColumnValuesRequest, request: Request, response: Response):
-    try:
-        session_id = get_or_create_session_id(request, response)
-        analyzer = get_active_analyzer(session_id)
+async def column_values(body: ColumnValuesRequest, request: Request):
+    session_id = get_session_id(request)
 
-        return JSONResponse(content={
+    try:
+        analyzer = get_active_analyzer(session_id)
+        resp = JSONResponse(content={
             "values": analyzer.get_unique_column_values(body.column)
         })
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/date-range")
-async def refresh_date_range(body: DateRangeRequest, request: Request, response: Response):
-    try:
-        session_id = get_or_create_session_id(request, response)
-        analyzer = get_active_analyzer(session_id)
+async def refresh_date_range(body: DateRangeRequest, request: Request):
+    session_id = get_session_id(request)
 
-        return JSONResponse(content=analyzer.get_date_range(body.timeline_column))
+    try:
+        analyzer = get_active_analyzer(session_id)
+        resp = JSONResponse(content=analyzer.get_date_range(body.timeline_column))
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/analyze")
-async def analyze_data(body: AnalyzeRequest, request: Request, response: Response):
+async def analyze_data(body: AnalyzeRequest, request: Request):
+    session_id = get_session_id(request)
+
     try:
-        session_id = get_or_create_session_id(request, response)
         target = "compare" if body.target == "compare" else "primary"
         analyzer = get_active_analyzer(session_id, target=target)
 
@@ -305,18 +327,21 @@ async def analyze_data(body: AnalyzeRequest, request: Request, response: Respons
             business_view=body.business_view
         )
 
-        return JSONResponse(content=results)
+        resp = JSONResponse(content=results)
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.post("/api/suggest-goals")
-async def suggest_goals(body: SuggestGoalsRequest, request: Request, response: Response):
+async def suggest_goals(body: SuggestGoalsRequest, request: Request):
+    session_id = get_session_id(request)
+
     try:
-        session_id = get_or_create_session_id(request, response)
         analyzer = get_active_analyzer(session_id)
 
         suggestions = analyzer.suggest_goal_candidates(
@@ -327,12 +352,14 @@ async def suggest_goals(body: SuggestGoalsRequest, request: Request, response: R
             top_n=body.top_n
         )
 
-        return JSONResponse(content={"suggestions": suggestions})
+        resp = JSONResponse(content={"suggestions": suggestions})
 
     except HTTPException:
         raise
     except Exception as e:
-        return error_response(e)
+        resp = error_response(e)
+
+    return stamp_session_cookie(resp, session_id)
 
 
 @app.get("/", response_class=HTMLResponse)
