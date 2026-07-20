@@ -19,6 +19,19 @@ DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 
 app = FastAPI(title="Book of Business Intelligent Analyzer")
 
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    FastAPI's default HTTPException handler returns {"detail": "..."}, but every other
+    error path in this app returns {"error": "..."} (see error_response below). Without this,
+    HTTPExceptions raised via get_active_analyzer() — e.g. "no file uploaded yet" — reach the
+    client in a shape the frontend doesn't check, so the real reason silently gets swallowed
+    and the user just sees a generic "(HTTP 400)" message instead of what actually went wrong.
+    """
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SESSION_COOKIE_NAME = "bob_session_id"
