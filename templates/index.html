@@ -217,6 +217,32 @@
                     </div>
 
                     <div id="goals-list" class="flex flex-wrap gap-2"></div>
+
+                    <div class="border-t border-slate-800 pt-3">
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div>
+                                <p class="text-xs font-semibold text-slate-300">Suggest Goals</p>
+                                <p class="text-[10px] text-slate-500 max-w-sm">
+                                    Proposes targets from last year's same period plus the book's own trailing growth rate, for the overall book and top segments/profit centers/agencies.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Period</label>
+                                <select id="suggest-goals-period" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
+                                    <option value="annual">Annual</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                            </div>
+
+                            <button onclick="suggestGoals()" class="bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-semibold px-4 py-2 rounded-lg transition-colors">
+                                Suggest Goals
+                            </button>
+                        </div>
+
+                        <div id="goal-suggestions-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3"></div>
+                    </div>
                 </div>
 
                 <div id="saved-views-panel" class="hidden bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-3">
@@ -1053,6 +1079,107 @@
             label.innerText = currentGoals.length === 0
                 ? 'No goals set'
                 : `${currentGoals.length} goal${currentGoals.length > 1 ? 's' : ''} set`;
+        }
+
+        let lastGoalSuggestions = [];
+
+        async function suggestGoals() {
+            if (!activeMapping || !activeMapping.financial_metric || !activeMapping.timeline_metric) {
+                showErrorToast("Load and map a file before requesting goal suggestions.");
+                return;
+            }
+
+            const period = document.getElementById('suggest-goals-period').value;
+            const container = document.getElementById('goal-suggestions-list');
+            container.innerHTML = '<span class="text-xs text-slate-500 italic col-span-2">Analyzing history...</span>';
+
+            try {
+                const response = await fetch('/api/suggest-goals', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mapping: activeMapping,
+                        projection_target: currentMetricTarget,
+                        period: period,
+                        business_view: currentBusinessView,
+                        top_n: 3
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || `Suggestion request failed (HTTP ${response.status}).`);
+                }
+
+                renderGoalSuggestions(data.suggestions || []);
+
+            } catch (err) {
+                container.innerHTML = '';
+                showErrorToast("Could not generate goal suggestions: " + err.message);
+            }
+        }
+
+        function renderGoalSuggestions(suggestions) {
+            lastGoalSuggestions = suggestions;
+            const container = document.getElementById('goal-suggestions-list');
+
+            if (suggestions.length === 0) {
+                container.innerHTML = '<span class="text-xs text-slate-500 italic col-span-2">Not enough history yet to suggest goals for this period.</span>';
+                return;
+            }
+
+            container.innerHTML = suggestions.map((s, idx) => {
+                const metric = s.metric_type || currentMetricTarget;
+                const growthLabel = `${s.growth_rate_pct >= 0 ? '+' : ''}${s.growth_rate_pct.toFixed(1)}%`;
+                const growthNote = s.data_sufficient
+                    ? `${growthLabel} vs. the prior comparable period`
+                    : `${growthLabel} (using overall book trend — limited standalone history)`;
+
+                return `
+                    <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                        <p class="text-xs font-semibold text-white">${escapeHtml(s.scope_label)}</p>
+                        <p class="text-[10px] text-slate-500 mt-0.5">
+                            Last comparable period: ${formatValueByMetric(s.reference_actual, metric)} &middot; ${escapeHtml(growthNote)}
+                        </p>
+
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            <button onclick="addSuggestedGoal(${idx}, 'maintain')" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded transition-colors">
+                                Maintain ${formatValueByMetric(s.suggestions.maintain, metric)}
+                            </button>
+                            <button onclick="addSuggestedGoal(${idx}, 'grow')" class="text-[11px] bg-teal-600/30 hover:bg-teal-600/50 text-teal-300 px-2 py-1 rounded transition-colors">
+                                Grow ${formatValueByMetric(s.suggestions.grow, metric)}
+                            </button>
+                            <button onclick="addSuggestedGoal(${idx}, 'stretch')" class="text-[11px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 px-2 py-1 rounded transition-colors">
+                                Stretch ${formatValueByMetric(s.suggestions.stretch, metric)}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function addSuggestedGoal(idx, tier) {
+            const s = lastGoalSuggestions[idx];
+            if (!s) return;
+
+            const tierLabels = { maintain: 'Maintain', grow: 'Grow', stretch: 'Stretch' };
+            const targetValue = s.suggestions[tier];
+
+            if (!targetValue || targetValue <= 0) return;
+
+            currentGoals.push({
+                id: 'goal_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                label: `${s.scope_label} — ${tierLabels[tier]}`,
+                scope_type: s.scope_type,
+                scope_value: s.scope_value,
+                period: s.period,
+                target_value: targetValue
+            });
+
+            renderGoalsChips();
+            updateGoalsSummaryLabel();
+            triggerUpdate();
         }
 
         function getSavedViews() {
