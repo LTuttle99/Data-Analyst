@@ -1,23 +1,116 @@
+import logging
 import os
 import traceback
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from typing import Optional
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.requests import Request
+from pydantic import BaseModel, Field
+
 from analyzer import BookOfBusinessAnalyzer
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("book_of_business")
+
+# Set DEBUG=1 in the environment to include server tracebacks in API error responses.
+# Leave unset in production so internal stack traces aren't exposed to clients.
+DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 
 app = FastAPI(title="Book of Business Intelligent Analyzer")
 
-UPLOADED_FILE_CACHE = {}
+SESSION_CACHE = {}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+# --------------------------------------------------------------------------- #
+# Request schemas
+# --------------------------------------------------------------------------- #
+
+class ProfitCenterRequest(BaseModel):
+    profit_center_column: Optional[str] = None
+
+
+class AgencyCodeRequest(BaseModel):
+    agency_code_column: Optional[str] = None
+
+
+class ColumnValuesRequest(BaseModel):
+    column: Optional[str] = None
+
+
+class DateRangeRequest(BaseModel):
+    timeline_column: Optional[str] = None
+
+
+class GoalConfig(BaseModel):
+    id: Optional[str] = None
+    label: Optional[str] = "Goal"
+    period: str = "annual"
+    scope_type: str = "overall"
+    scope_value: Optional[str] = None
+    target_value: float = 0.0
+
+
+class AnalyzeRequest(BaseModel):
+    mapping: dict
+    profit_center: str = "ALL"
+    projection_target: str = "premium"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    include_future_dates: bool = False
+    selected_agency_codes: list = Field(default_factory=list)
+    goal_value: float = 0.0
+    goals: list[GoalConfig] = Field(default_factory=list)
+    business_view: str = "all"
+
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+
+def get_active_analyzer() -> BookOfBusinessAnalyzer:
+    """Fetch the analyzer for the current session, or raise a clear 400 error."""
+    analyzer = SESSION_CACHE.get("current_session")
+
+    if not analyzer:
+        raise HTTPException(
+            status_code=400,
+            detail="No active data file found in session memory. Upload a file first."
+        )
+
+    return analyzer
+
+
+def error_response(exc: Exception, status_code: int = 500) -> JSONResponse:
+    """Log the full traceback server-side and return a clean, bounded error to the client."""
+    logger.error("Request failed: %s", exc, exc_info=True)
+
+    message = str(exc) or exc.__class__.__name__
+
+    if DEBUG_MODE:
+        message = f"{message}\n\nTraceback:\n{traceback.format_exc()}"
+
+    return JSONResponse(status_code=status_code, content={"error": message})
+
+
+def _model_to_dict(model: BaseModel) -> dict:
+    """Support both pydantic v2 (model_dump) and v1 (dict) without pinning a version."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
+# --------------------------------------------------------------------------- #
+# Routes
+# --------------------------------------------------------------------------- #
 
 @app.get("/api/health")
 async def health_check():
     return JSONResponse(content={
         "status": "ok",
-        "service": "Book of Business Intelligent Analyzer"
+        "service": "Book of Business Intelligent Analyzer",
+        "session_active": "current_session" in SESSION_CACHE
     })
 
 
@@ -26,166 +119,102 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         contents = await file.read()
 
+        if not contents:
+            raise ValueError("The uploaded file is empty.")
+
         analyzer = BookOfBusinessAnalyzer(contents, file.filename)
         schema = analyzer.infer_schema()
 
-        UPLOADED_FILE_CACHE["current_session"] = analyzer
+        SESSION_CACHE["current_session"] = analyzer
 
         return JSONResponse(content=schema)
 
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print(error_trace)
-
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": f"{str(e)}\n\nTraceback:\n{error_trace}"
-            }
-        )
+        return error_response(e, status_code=400)
 
 
 @app.post("/api/profit-centers")
-async def refresh_profit_centers(request: Request):
+async def refresh_profit_centers(body: ProfitCenterRequest):
     try:
-        body = await request.json()
-        pc_col = body.get("profit_center_column")
-
-        analyzer = UPLOADED_FILE_CACHE.get("current_session")
-
-        if not analyzer:
-            raise HTTPException(
-                status_code=400,
-                detail="No active data file found in session memory."
-            )
+        analyzer = get_active_analyzer()
 
         return JSONResponse(content={
-            "profit_centers": analyzer.get_profit_centers(pc_col)
+            "profit_centers": analyzer.get_profit_centers(body.profit_center_column)
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print(error_trace)
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"{str(e)}\n\nTraceback:\n{error_trace}"
-            }
-        )
+        return error_response(e)
 
 
 @app.post("/api/agency-codes")
-async def refresh_agency_codes(request: Request):
+async def refresh_agency_codes(body: AgencyCodeRequest):
     try:
-        body = await request.json()
-        agency_col = body.get("agency_code_column")
-
-        analyzer = UPLOADED_FILE_CACHE.get("current_session")
-
-        if not analyzer:
-            raise HTTPException(
-                status_code=400,
-                detail="No active data file found in session memory."
-            )
+        analyzer = get_active_analyzer()
 
         return JSONResponse(content={
-            "agency_codes": analyzer.get_agency_codes(agency_col)
+            "agency_codes": analyzer.get_agency_codes(body.agency_code_column)
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print(error_trace)
+        return error_response(e)
 
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"{str(e)}\n\nTraceback:\n{error_trace}"
-            }
-        )
+
+@app.post("/api/column-values")
+async def column_values(body: ColumnValuesRequest):
+    try:
+        analyzer = get_active_analyzer()
+
+        return JSONResponse(content={
+            "values": analyzer.get_unique_column_values(body.column)
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(e)
 
 
 @app.post("/api/date-range")
-async def refresh_date_range(request: Request):
+async def refresh_date_range(body: DateRangeRequest):
     try:
-        body = await request.json()
-        time_col = body.get("timeline_column")
+        analyzer = get_active_analyzer()
 
-        analyzer = UPLOADED_FILE_CACHE.get("current_session")
+        return JSONResponse(content=analyzer.get_date_range(body.timeline_column))
 
-        if not analyzer:
-            raise HTTPException(
-                status_code=400,
-                detail="No active data file found in session memory."
-            )
-
-        return JSONResponse(content=analyzer.get_date_range(time_col))
-
+    except HTTPException:
+        raise
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print(error_trace)
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"{str(e)}\n\nTraceback:\n{error_trace}"
-            }
-        )
+        return error_response(e)
 
 
 @app.post("/api/analyze")
-async def analyze_data(request: Request):
+async def analyze_data(body: AnalyzeRequest):
     try:
-        body = await request.json()
-
-        mapping = body.get("mapping")
-        profit_center = body.get("profit_center", "ALL")
-        projection_target = body.get("projection_target", "premium")
-        start_date = body.get("start_date")
-        end_date = body.get("end_date")
-        include_future_dates = bool(body.get("include_future_dates", False))
-        selected_agency_codes = body.get("selected_agency_codes", []) or []
-        business_view = body.get("business_view", "all")
-
-        goal_raw = body.get("goal_value", 0)
-
-        try:
-            goal_value = float(goal_raw) if goal_raw not in (None, "", "null") else 0.0
-        except (ValueError, TypeError):
-            goal_value = 0.0
-
-        analyzer = UPLOADED_FILE_CACHE.get("current_session")
-
-        if not analyzer:
-            raise HTTPException(
-                status_code=400,
-                detail="No active data file found in session memory."
-            )
+        analyzer = get_active_analyzer()
 
         results = analyzer.run_analysis(
-            mapping=mapping,
-            selected_profit_center=profit_center,
-            projection_target=projection_target,
-            start_date=start_date,
-            end_date=end_date,
-            include_future_dates=include_future_dates,
-            selected_agency_codes=selected_agency_codes,
-            goal_value=goal_value,
-            business_view=business_view
+            mapping=body.mapping,
+            selected_profit_center=body.profit_center,
+            projection_target=body.projection_target,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            include_future_dates=body.include_future_dates,
+            selected_agency_codes=body.selected_agency_codes,
+            goal_value=body.goal_value,
+            goals=[_model_to_dict(g) for g in body.goals],
+            business_view=body.business_view
         )
 
         return JSONResponse(content=results)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print(error_trace)
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": f"{str(e)}\n\nTraceback:\n{error_trace}"
-            }
-        )
+        return error_response(e)
 
 
 @app.get("/", response_class=HTMLResponse)
