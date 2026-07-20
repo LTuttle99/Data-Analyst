@@ -562,16 +562,30 @@
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl lg:col-span-2">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-1">
-                        Client Vintage Cohorts
-                    </h4>
+                    <div class="flex items-center justify-between mb-1">
+                        <h4 class="text-sm font-medium tracking-wide text-slate-300">
+                            Long-Range Forecast
+                        </h4>
+
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] text-slate-500 uppercase tracking-wider">Horizon</label>
+                            <select id="forecast-horizon-select" onchange="onForecastHorizonChange()" class="bg-slate-900 border border-slate-700 rounded-lg text-xs px-2 py-1 text-slate-100 focus:border-teal-500">
+                                <option value="12">12 months</option>
+                                <option value="24" selected>24 months</option>
+                                <option value="36">36 months</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <p class="text-xs text-slate-500 mb-4">
-                        Each line is a group of clients by the calendar year they first appeared, tracked across subsequent years — a quick read on cohort retention and expansion.
+                        Projected forward from the latest data point, not tied to calendar year-end. The shaded range widens the further out the estimate reaches — treat anything beyond ~12 months as directional planning, not a firm number.
                     </p>
 
                     <div class="h-72">
-                        <canvas id="vintageCohortChart"></canvas>
+                        <canvas id="longRangeForecastChart"></canvas>
                     </div>
+
+                    <div id="annual-rollup-cards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4"></div>
                 </div>
             </div>
 
@@ -635,6 +649,7 @@
         let currentBusinessView = "all";
         let dateBounds = { min_date: null, max_date: null };
         let currentGoals = [];
+        let currentForecastHorizon = 24;
         let allAgencyCodes = [];
         let selectedAgencyCodes = [];
         let pendingAgencySelections = new Set();
@@ -1530,7 +1545,8 @@
                         include_future_dates: includeFuture,
                         selected_agency_codes: selectedAgencyCodes,
                         goals: currentGoals,
-                        business_view: currentBusinessView
+                        business_view: currentBusinessView,
+                        forecast_horizon_months: currentForecastHorizon
                     })
                 });
 
@@ -1734,7 +1750,7 @@
             renderSegmentChart(res.segment_distribution);
             renderProjectionChart(res.projections);
             renderSeasonalityChart(res.seasonality);
-            renderVintageCohortChart(res.vintage_cohorts);
+            renderLongRangeForecast(res.long_range_forecast);
             renderComparisonDeltas();
         }
 
@@ -1769,44 +1785,69 @@
             }).join('');
         }
 
-        function renderVintageCohortChart(cohorts) {
-            const canvas = document.getElementById('vintageCohortChart');
+        function onForecastHorizonChange() {
+            const select = document.getElementById('forecast-horizon-select');
+            currentForecastHorizon = parseInt(select.value, 10) || 24;
+            triggerUpdate();
+        }
+
+        function renderLongRangeForecast(lrf) {
+            const canvas = document.getElementById('longRangeForecastChart');
             if (!canvas) return;
 
-            const cohortEntries = Object.entries(cohorts || {});
+            const monthly = (lrf && lrf.monthly) || [];
 
-            if (cohortEntries.length === 0) {
-                initChartInstance('vintageCohortChart', {
+            if (monthly.length === 0) {
+                initChartInstance('longRangeForecastChart', {
                     type: 'line',
                     data: { labels: [], datasets: [] },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
+                document.getElementById('annual-rollup-cards').innerHTML = `
+                    <p class="text-xs text-slate-500 italic col-span-4">Not enough monthly history yet to build a multi-year projection.</p>
+                `;
                 return;
             }
 
-            const allYears = new Set();
-            cohortEntries.forEach(([, yearMap]) => {
-                Object.keys(yearMap).forEach(k => allYears.add(k.replace('CY_', '')));
-            });
-            const sortedYears = Array.from(allYears).sort();
+            const labels = monthly.map(m => m.period);
 
-            const palette = ['#2dd4bf', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa', '#34d399', '#f472b6'];
-
-            const datasets = cohortEntries
-                .sort((a, b) => a[0].localeCompare(b[0]))
-                .map(([vintageLabel, yearMap], i) => ({
-                    label: vintageLabel,
-                    data: sortedYears.map(y => yearMap[`CY_${y}`] ?? null),
-                    borderColor: palette[i % palette.length],
-                    backgroundColor: palette[i % palette.length],
-                    spanGaps: true,
-                    tension: 0.3,
-                    fill: false
-                }));
-
-            initChartInstance('vintageCohortChart', {
+            initChartInstance('longRangeForecastChart', {
                 type: 'line',
-                data: { labels: sortedYears, datasets },
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Aggressive',
+                            data: monthly.map(m => m.aggressive_value),
+                            borderColor: 'rgba(167, 139, 250, 0.35)',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Expected',
+                            data: monthly.map(m => m.expected_value),
+                            borderColor: '#a78bfa',
+                            backgroundColor: 'rgba(167, 139, 250, 0.08)',
+                            borderWidth: 2.5,
+                            pointRadius: 0,
+                            tension: 0.3,
+                            fill: false
+                        },
+                        {
+                            label: 'Conservative',
+                            data: monthly.map(m => m.conservative_value),
+                            borderColor: 'rgba(167, 139, 250, 0.35)',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            tension: 0.3
+                        }
+                    ]
+                },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
@@ -1814,7 +1855,7 @@
                         legend: { labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } } }
                     },
                     scales: {
-                        x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                        x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: '#1e293b' } },
                         y: {
                             ticks: {
                                 color: '#94a3b8',
@@ -1825,6 +1866,22 @@
                     }
                 }
             });
+
+            const rollup = (lrf && lrf.annual_rollup) || [];
+            const rollupContainer = document.getElementById('annual-rollup-cards');
+
+            if (rollup.length === 0) {
+                rollupContainer.innerHTML = '';
+                return;
+            }
+
+            rollupContainer.innerHTML = rollup.map(y => `
+                <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
+                    <p class="text-xs font-semibold text-slate-300">${y.year}${y.is_partial_year ? ` <span class="text-slate-500 font-normal">(${y.months_included} mo)</span>` : ''}</p>
+                    <p class="text-base font-bold text-purple-300 mt-1">${formatValueByMetric(y.projected_total, currentMetricTarget)}</p>
+                    <p class="text-[10px] text-slate-500 mt-0.5">${formatValueByMetric(y.conservative_total, currentMetricTarget)} – ${formatValueByMetric(y.aggressive_total, currentMetricTarget)}</p>
+                </div>
+            `).join('');
         }
 
         function renderForecastOutlook(fo) {
@@ -2473,8 +2530,8 @@
                     datasets: [{
                         label: 'Mean Distribution Core Concentration',
                         data: data,
-                        borderColor: '#e2e8f0',
-                        backgroundColor: 'rgba(226, 232, 240, 0.08)',
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'rgba(251, 191, 36, 0.12)',
                         fill: true,
                         tension: 0.3
                     }]
