@@ -6,6 +6,7 @@
     <title>Enterprise Book of Business Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <style>
         @keyframes fade-in {
             from { opacity: 0; transform: translateY(-6px); }
@@ -74,6 +75,11 @@
             </p>
 
             <div class="space-y-4" id="mapping-selectors"></div>
+
+            <div id="data-quality-panel" class="hidden mt-5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                <p class="text-xs font-semibold text-amber-300 uppercase tracking-wider mb-2">Data Quality Notes</p>
+                <ul id="data-quality-warnings" class="space-y-1 text-xs text-amber-200/90"></ul>
+            </div>
 
             <button id="submit-mapping-btn" onclick="submitMapping()" class="w-full mt-6 bg-teal-500 hover:bg-teal-400 text-slate-950 text-sm font-semibold py-3 px-4 rounded-lg shadow transition-colors">
                 Run Pipeline Execution
@@ -168,8 +174,27 @@
                             <button onclick="exportCurrentResultsCsv()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
                                 Export CSV
                             </button>
+                            <button onclick="exportCurrentResultsExcel()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                                Export Excel
+                            </button>
                             <button onclick="window.print()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
                                 Print / PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Compare Snapshot
+                        </label>
+
+                        <div class="flex gap-1 items-center">
+                            <input type="file" id="compare-file-input" accept=".csv,.xlsx,.xls" class="hidden" onchange="handleCompareFile(event.target.files[0])">
+                            <button onclick="document.getElementById('compare-file-input').click()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                                <span id="compare-snapshot-label">Upload Snapshot</span>
+                            </button>
+                            <button id="clear-compare-btn" onclick="clearComparisonSnapshot()" class="hidden bg-slate-900 border border-slate-700 hover:border-red-500 text-slate-400 hover:text-red-300 text-xs font-medium px-2 py-2 rounded-lg transition-colors" title="Clear comparison">
+                                &times;
                             </button>
                         </div>
                     </div>
@@ -321,26 +346,31 @@
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Premium</p>
                     <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-premium">$0</p>
+                    <p class="text-[11px] font-semibold mt-1 hidden" id="kpi-premium-delta"></p>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Count</p>
                     <p class="text-2xl font-bold text-teal-400 mt-1 tracking-tight" id="kpi-accounts">0</p>
+                    <p class="text-[11px] font-semibold mt-1 hidden" id="kpi-accounts-delta"></p>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Mean Exposure</p>
                     <p class="text-2xl font-bold text-white mt-1 tracking-tight" id="kpi-avg-size">$0</p>
+                    <p class="text-[11px] font-semibold mt-1 hidden" id="kpi-avg-size-delta"></p>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Account Retention Ratio</p>
                     <p class="text-2xl font-bold text-emerald-400 mt-1 tracking-tight" id="kpi-retention">0.0%</p>
+                    <p class="text-[11px] font-semibold mt-1 hidden" id="kpi-retention-delta"></p>
                 </div>
 
                 <div class="bg-slate-950 border border-slate-800 p-5 rounded-xl">
                     <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Concentration HHI Index</p>
                     <p class="text-2xl font-bold text-amber-400 mt-1 tracking-tight" id="kpi-hhi">0</p>
+                    <p class="text-[11px] font-semibold mt-1 hidden" id="kpi-hhi-delta"></p>
                 </div>
             </div>
 
@@ -530,27 +560,65 @@
                         <canvas id="seasonalityChart"></canvas>
                     </div>
                 </div>
+
+                <div class="bg-slate-950 border border-slate-800 p-6 rounded-xl lg:col-span-2">
+                    <h4 class="text-sm font-medium tracking-wide text-slate-300 mb-1">
+                        Client Vintage Cohorts
+                    </h4>
+                    <p class="text-xs text-slate-500 mb-4">
+                        Each line is a group of clients by the calendar year they first appeared, tracked across subsequent years — a quick read on cohort retention and expansion.
+                    </p>
+
+                    <div class="h-72">
+                        <canvas id="vintageCohortChart"></canvas>
+                    </div>
+                </div>
             </div>
 
-            <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
-                <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">
-                    Key Risk Exposures and Book Concentration Outliers
-                </h4>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
+                    <h4 class="text-sm font-medium tracking-wide text-red-400 mb-4">
+                        Key Risk Exposures and Book Concentration Outliers
+                    </h4>
 
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead>
-                            <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
-                                <th class="pb-3 pl-4">Account Reference Identifier</th>
-                                <th class="pb-3">Aggregate Financial Concentration Size</th>
-                                <th class="pb-3 pr-4">Risk Variance Reason</th>
-                            </tr>
-                        </thead>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
+                                    <th class="pb-3 pl-4">Account Reference Identifier</th>
+                                    <th class="pb-3">Aggregate Financial Concentration Size</th>
+                                    <th class="pb-3 pr-4">Risk Variance Reason</th>
+                                </tr>
+                            </thead>
 
-                        <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
-                    </table>
-                </div>
-            </section>
+                            <tbody id="anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="bg-slate-950 border border-slate-800 rounded-xl p-6">
+                    <h4 class="text-sm font-medium tracking-wide text-amber-400 mb-1">
+                        Month-over-Month Spikes &amp; Drops
+                    </h4>
+                    <p class="text-xs text-slate-500 mb-4">
+                        Profit centers and agencies whose latest month deviates sharply from their own trailing 3-month average.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase">
+                                    <th class="pb-3 pl-4">Entity</th>
+                                    <th class="pb-3">Latest Month</th>
+                                    <th class="pb-3 pr-4">Deviation</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="trend-anomaly-table-rows" class="divide-y divide-slate-900 text-slate-300"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
         </div>
     </main>
 
@@ -571,6 +639,7 @@
         let selectedAgencyCodes = [];
         let pendingAgencySelections = new Set();
         let lastResults = null;
+        let lastComparisonResults = null;
 
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
@@ -622,11 +691,28 @@
                 }
 
                 renderMappingSelectors(data.inferred_mapping || {});
+                renderDataQualityPanel(data.data_quality || null);
 
             } catch (err) {
-                alert("Upload Pipeline Fault: " + err.message);
+                showErrorToast("Upload failed: " + err.message);
                 resetUploadZone();
             }
+        }
+
+        function renderDataQualityPanel(quality) {
+            const panel = document.getElementById('data-quality-panel');
+            const list = document.getElementById('data-quality-warnings');
+
+            const warnings = (quality && quality.warnings) || [];
+
+            if (warnings.length === 0) {
+                panel.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+
+            panel.classList.remove('hidden');
+            list.innerHTML = warnings.map(w => `<li>&bull; ${escapeHtml(w)}</li>`).join('');
         }
 
         function resetUploadZone() {
@@ -1058,9 +1144,11 @@
 
             list.innerHTML = currentGoals.map(g => {
                 const scopeLabel = g.scope_type === "overall" ? "Overall" : `${g.scope_type.replace('_', ' ')}: ${g.scope_value}`;
+                const removeAttr = g.locked ? `onclick="confirmRemoveLockedGoal('${g.id}')"` : `onclick="removeGoal('${g.id}')"`;
 
                 return `
-                    <span class="inline-flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-full px-3 py-1.5 text-xs text-slate-200">
+                    <span class="inline-flex items-center gap-2 bg-slate-950 border ${g.locked ? 'border-amber-500/50' : 'border-slate-700'} rounded-full px-3 py-1.5 text-xs text-slate-200">
+                        ${g.locked ? '<span title="Locked">&#128274;</span>' : ''}
                         <span class="font-semibold">${escapeHtml(g.label)}</span>
                         <span class="text-slate-500">&middot;</span>
                         <span class="text-slate-400">${escapeHtml(scopeLabel)}</span>
@@ -1068,7 +1156,7 @@
                         <span class="text-slate-400 capitalize">${escapeHtml(g.period)}</span>
                         <span class="text-slate-500">&middot;</span>
                         <span class="text-teal-400">${formatValueByMetric(g.target_value, currentMetricTarget)}</span>
-                        <button onclick="removeGoal('${g.id}')" class="text-red-400 hover:text-red-300 font-bold ml-1">&times;</button>
+                        <button ${removeAttr} class="text-red-400 hover:text-red-300 font-bold ml-1">&times;</button>
                     </span>
                 `;
             }).join('');
@@ -1326,6 +1414,77 @@
             URL.revokeObjectURL(url);
         }
 
+        function exportCurrentResultsExcel() {
+            if (!lastResults) {
+                showErrorToast('Run an analysis first.');
+                return;
+            }
+
+            if (typeof XLSX === 'undefined') {
+                showErrorToast('Excel export library failed to load. Check your network connection and try again.');
+                return;
+            }
+
+            const wb = XLSX.utils.book_new();
+
+            const kpiRows = [
+                ['Metric', 'Value'],
+                ['Total Premium', lastResults.kpis.total_premium],
+                ['Policy Count', lastResults.kpis.total_accounts],
+                ['Mean Exposure', lastResults.kpis.avg_account_size],
+                ['Retention Rate %', lastResults.kpis.retention_rate],
+                ['HHI Index', lastResults.kpis.hhi_index]
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(kpiRows), 'KPIs');
+
+            const goalRows = [
+                ['Goal Label', 'Scope Type', 'Scope Value', 'Period', 'Period Start', 'Period End', 'Target', 'Actual', 'Achievement %', 'Expected %', 'Gap', 'Projected Period End', 'Projected Low', 'Projected High', 'Status']
+            ];
+
+            (lastResults.goal_progress || []).forEach(g => {
+                goalRows.push([
+                    g.label, g.scope_type, g.scope_value || '', g.period, g.period_start, g.period_end,
+                    g.target, g.actual, g.achievement_pct, g.expected_pct, g.gap_to_goal,
+                    g.projected_period_end, g.projected_period_end_low ?? '', g.projected_period_end_high ?? '', g.status
+                ]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(goalRows), 'Goals');
+
+            const timeline = lastResults.historical_timeline || {};
+            const trendRows = [['Month', 'Value', 'Rolling Avg', 'New', 'Renewal']];
+
+            (timeline.labels || []).forEach((label, i) => {
+                trendRows.push([
+                    label,
+                    (timeline.values || [])[i],
+                    (timeline.rolling_avg || [])[i],
+                    (timeline.new_values || [])[i],
+                    (timeline.renewal_values || [])[i]
+                ]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trendRows), 'Monthly Trend');
+
+            const segmentRows = [['Segment', 'Value']];
+            Object.entries(lastResults.segment_distribution || {}).forEach(([seg, val]) => {
+                segmentRows.push([seg, val]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(segmentRows), 'Segments');
+
+            const anomalyRows = [['Account', 'Value', 'Reason']];
+            (lastResults.anomalies || []).forEach(a => {
+                anomalyRows.push([a.identifier, a.value, a.reason]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(anomalyRows), 'Concentration Risk');
+
+            const trendAnomalyRows = [['Scope Type', 'Scope Value', 'Latest Period', 'Latest Value', 'Trailing Avg', 'Deviation %', 'Direction']];
+            (lastResults.trend_anomalies || []).forEach(a => {
+                trendAnomalyRows.push([a.scope_type, a.scope_value, a.latest_period, a.latest_value, a.trailing_avg, a.deviation_pct, a.direction]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trendAnomalyRows), 'Spikes and Drops');
+
+            XLSX.writeFile(wb, `book_of_business_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        }
+
         async function triggerUpdate() {
             if (!activeMapping || !activeMapping.financial_metric || !activeMapping.timeline_metric) {
                 return;
@@ -1409,6 +1568,123 @@
             }, 6000);
         }
 
+        async function handleCompareFile(file) {
+            if (!file) return;
+
+            if (!activeMapping || !activeMapping.financial_metric || !activeMapping.timeline_metric) {
+                showErrorToast("Load and map your primary file before uploading a comparison snapshot.");
+                return;
+            }
+
+            const label = document.getElementById('compare-snapshot-label');
+            label.innerText = "Uploading...";
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const uploadResponse = await fetch('/api/compare-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const uploadData = await uploadResponse.json();
+
+                if (!uploadResponse.ok || uploadData.error) {
+                    throw new Error(uploadData.error || `Comparison upload failed (HTTP ${uploadResponse.status}).`);
+                }
+
+                await runComparisonAnalysis();
+
+                label.innerText = file.name.length > 18 ? file.name.slice(0, 15) + "..." : file.name;
+                document.getElementById('clear-compare-btn').classList.remove('hidden');
+
+            } catch (err) {
+                showErrorToast("Comparison snapshot failed: " + err.message);
+                label.innerText = "Upload Snapshot";
+            }
+        }
+
+        async function runComparisonAnalysis() {
+            const selectedPC = document.getElementById('filter-profit-center').value;
+            const startDate = document.getElementById('filter-start-date').value;
+            const endDate = document.getElementById('filter-end-date').value;
+            const includeFuture = document.getElementById('toggle-future-dates').checked;
+
+            const response = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mapping: activeMapping,
+                    profit_center: selectedPC,
+                    projection_target: currentMetricTarget,
+                    start_date: startDate || null,
+                    end_date: endDate || null,
+                    include_future_dates: includeFuture,
+                    selected_agency_codes: selectedAgencyCodes,
+                    goals: [],
+                    business_view: currentBusinessView,
+                    target: "compare"
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(data.error || `Comparison analysis failed (HTTP ${response.status}).`);
+            }
+
+            lastComparisonResults = data;
+            renderComparisonDeltas();
+        }
+
+        function clearComparisonSnapshot() {
+            lastComparisonResults = null;
+            document.getElementById('compare-snapshot-label').innerText = "Upload Snapshot";
+            document.getElementById('clear-compare-btn').classList.add('hidden');
+            document.getElementById('compare-file-input').value = '';
+            renderComparisonDeltas();
+        }
+
+        function renderComparisonDeltas() {
+            const metrics = [
+                { key: 'total_premium', id: 'kpi-premium-delta', format: 'premium' },
+                { key: 'total_accounts', id: 'kpi-accounts-delta', format: 'count' },
+                { key: 'avg_account_size', id: 'kpi-avg-size-delta', format: 'premium' },
+                { key: 'retention_rate', id: 'kpi-retention-delta', format: 'points' },
+                { key: 'hhi_index', id: 'kpi-hhi-delta', format: 'points' }
+            ];
+
+            metrics.forEach(m => {
+                const el = document.getElementById(m.id);
+                if (!el) return;
+
+                if (!lastResults || !lastComparisonResults) {
+                    el.classList.add('hidden');
+                    el.innerText = '';
+                    return;
+                }
+
+                const current = Number((lastResults.kpis || {})[m.key] || 0);
+                const previous = Number((lastComparisonResults.kpis || {})[m.key] || 0);
+
+                let deltaText;
+
+                if (m.format === 'points') {
+                    const delta = current - previous;
+                    deltaText = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts vs snapshot`;
+                    el.className = "text-[11px] font-semibold mt-1 " + (delta >= 0 ? "text-emerald-400" : "text-red-400");
+                } else {
+                    const pctDelta = previous !== 0 ? ((current - previous) / previous) * 100 : (current > 0 ? 100 : 0);
+                    deltaText = `${pctDelta >= 0 ? '+' : ''}${pctDelta.toFixed(1)}% vs snapshot`;
+                    el.className = "text-[11px] font-semibold mt-1 " + (pctDelta >= 0 ? "text-emerald-400" : "text-red-400");
+                }
+
+                el.innerText = deltaText;
+                el.classList.remove('hidden');
+            });
+        }
+
         function formatValueByMetric(val, metric) {
             const safeVal = Number(val || 0);
 
@@ -1450,10 +1726,102 @@
             renderForecastOutlook(res.forecast_outlook);
             renderAIInsights(res.ai_insights);
             renderAnomalies(res.anomalies);
+            renderTrendAnomalies(res.trend_anomalies);
             renderTrendChart(res.historical_timeline);
             renderSegmentChart(res.segment_distribution);
             renderProjectionChart(res.projections);
             renderSeasonalityChart(res.seasonality);
+            renderVintageCohortChart(res.vintage_cohorts);
+            renderComparisonDeltas();
+        }
+
+        function renderTrendAnomalies(trendAnomalies) {
+            const tableBody = document.getElementById('trend-anomaly-table-rows');
+            const list = trendAnomalies || [];
+
+            if (list.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="py-4 text-center text-slate-500 text-xs">
+                            No significant month-over-month spikes or drops detected.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tableBody.innerHTML = list.map(a => {
+                const scopeLabel = a.scope_type === "agency_code" ? "Agency" : "Profit Center";
+                const isSpike = a.direction === "spike";
+                const arrow = isSpike ? "▲" : "▼";
+                const colorClass = isSpike ? "text-emerald-400" : "text-red-400";
+
+                return `
+                    <tr class="hover:bg-slate-900/40 text-xs">
+                        <td class="py-3 pl-4 text-slate-200">${escapeHtml(scopeLabel)}: ${escapeHtml(a.scope_value)}</td>
+                        <td class="py-3 text-slate-400">${escapeHtml(a.latest_period)} &middot; ${formatValueByMetric(a.latest_value, currentMetricTarget)}</td>
+                        <td class="py-3 pr-4 font-semibold ${colorClass}">${arrow} ${Math.abs(a.deviation_pct).toFixed(0)}% vs trailing avg</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderVintageCohortChart(cohorts) {
+            const canvas = document.getElementById('vintageCohortChart');
+            if (!canvas) return;
+
+            const cohortEntries = Object.entries(cohorts || {});
+
+            if (cohortEntries.length === 0) {
+                initChartInstance('vintageCohortChart', {
+                    type: 'line',
+                    data: { labels: [], datasets: [] },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            const allYears = new Set();
+            cohortEntries.forEach(([, yearMap]) => {
+                Object.keys(yearMap).forEach(k => allYears.add(k.replace('CY_', '')));
+            });
+            const sortedYears = Array.from(allYears).sort();
+
+            const palette = ['#2dd4bf', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa', '#34d399', '#f472b6'];
+
+            const datasets = cohortEntries
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([vintageLabel, yearMap], i) => ({
+                    label: vintageLabel,
+                    data: sortedYears.map(y => yearMap[`CY_${y}`] ?? null),
+                    borderColor: palette[i % palette.length],
+                    backgroundColor: palette[i % palette.length],
+                    spanGaps: true,
+                    tension: 0.3,
+                    fill: false
+                }));
+
+            initChartInstance('vintageCohortChart', {
+                type: 'line',
+                data: { labels: sortedYears, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+                        y: {
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: (v) => formatValueByMetric(v, currentMetricTarget)
+                            },
+                            grid: { color: '#1e293b' }
+                        }
+                    }
+                }
+            });
         }
 
         function renderForecastOutlook(fo) {
@@ -1705,7 +2073,8 @@
             const list = goalProgressList || [];
 
             Object.keys(activeGoalCharts).forEach(ctxId => {
-                if (!list.find(g => `goalGauge_${g.id}` === ctxId)) {
+                const stillNeeded = list.find(g => `goalGauge_${g.id}` === ctxId || `goalSpark_${g.id}` === ctxId);
+                if (!stillNeeded) {
                     activeGoalCharts[ctxId].destroy();
                     delete activeGoalCharts[ctxId];
                 }
@@ -1729,6 +2098,11 @@
                     ? "Overall"
                     : `${gp.scope_type.replace('_', ' ')}: ${gp.scope_value}`;
                 const canvasId = `goalGauge_${gp.id}`;
+                const sparkId = `goalSpark_${gp.id}`;
+                const locked = isGoalLocked(gp.id);
+                const hasBand = gp.projected_period_end_low !== null && gp.projected_period_end_low !== undefined
+                    && gp.projected_period_end_high !== null && gp.projected_period_end_high !== undefined;
+                const hasTrend = gp.trend && gp.trend.length >= 2;
 
                 let narrative;
 
@@ -1744,11 +2118,17 @@
                     narrative = 'Not enough time has elapsed in this period to compute pace.';
                 }
 
+                const removeAttr = locked
+                    ? `onclick="confirmRemoveLockedGoal('${gp.id}')"`
+                    : `onclick="removeGoal('${gp.id}')"`;
+
                 return `
-                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-5">
+                    <div class="bg-slate-900/60 border ${locked ? 'border-amber-500/40' : 'border-slate-800'} rounded-lg p-5">
                         <div class="flex items-center justify-between mb-3">
                             <div>
-                                <p class="text-sm font-semibold text-white">${escapeHtml(gp.label)}</p>
+                                <p class="text-sm font-semibold text-white">
+                                    ${locked ? '<span title="Locked" class="mr-1">&#128274;</span>' : ''}${escapeHtml(gp.label)}
+                                </p>
                                 <p class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">
                                     ${escapeHtml(scopeLabel)} &middot; ${escapeHtml(gp.period)} &middot; ${escapeHtml(gp.period_start)} to ${escapeHtml(gp.period_end)}
                                 </p>
@@ -1756,7 +2136,10 @@
 
                             <div class="flex items-center gap-2">
                                 <span class="text-xs font-semibold px-3 py-1 rounded-full ${cfg.bg}">${cfg.label}</span>
-                                <button onclick="removeGoal('${gp.id}')" title="Remove goal" class="text-slate-500 hover:text-red-400 text-sm font-bold">&times;</button>
+                                <button onclick="toggleGoalLock('${gp.id}')" title="${locked ? 'Unlock goal' : 'Lock goal'}" class="text-slate-500 hover:text-amber-400 text-sm">
+                                    ${locked ? '&#128274;' : '&#128275;'}
+                                </button>
+                                <button ${removeAttr} title="Remove goal" class="text-slate-500 hover:text-red-400 text-sm font-bold">&times;</button>
                             </div>
                         </div>
 
@@ -1776,8 +2159,11 @@
                                 <div class="flex justify-between"><span class="text-slate-400">Gap</span><span class="font-semibold ${gap >= 0 ? 'text-emerald-400' : 'text-red-400'}">${gp.target > 0 ? (gap >= 0 ? "+" : "-") + formatValueByMetric(Math.abs(gap), metric) : "—"}</span></div>
                                 <div class="flex justify-between"><span class="text-slate-400">Expected Pace</span><span class="font-semibold text-slate-300">${Number(gp.expected_pct || 0).toFixed(1)}%</span></div>
                                 <div class="flex justify-between"><span class="text-slate-400">Projected Period End</span><span class="font-semibold text-purple-400">${formatValueByMetric(gp.projected_period_end, metric)}</span></div>
+                                ${hasBand ? `<div class="flex justify-between"><span class="text-slate-400">Projected Range</span><span class="font-semibold text-slate-400">${formatValueByMetric(gp.projected_period_end_low, metric)} – ${formatValueByMetric(gp.projected_period_end_high, metric)}</span></div>` : ''}
                             </div>
                         </div>
+
+                        ${hasTrend ? `<div class="h-12 mt-3"><canvas id="${sparkId}"></canvas></div>` : ''}
 
                         <p class="text-[11px] text-slate-400 italic mt-3">${escapeHtml(narrative)}</p>
                     </div>
@@ -1809,7 +2195,57 @@
                         }
                     }
                 });
+
+                if (gp.trend && gp.trend.length >= 2) {
+                    const sparkCanvas = document.getElementById(`goalSpark_${gp.id}`);
+
+                    if (sparkCanvas) {
+                        initGoalChartInstance(`goalSpark_${gp.id}`, {
+                            type: 'line',
+                            data: {
+                                labels: gp.trend.map(t => t.date),
+                                datasets: [{
+                                    data: gp.trend.map(t => t.cumulative_actual),
+                                    borderColor: cfg.ring,
+                                    backgroundColor: 'transparent',
+                                    borderWidth: 1.5,
+                                    pointRadius: 0,
+                                    tension: 0.3
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                                scales: { x: { display: false }, y: { display: false } }
+                            }
+                        });
+                    }
+                }
             });
+        }
+
+        function isGoalLocked(goalId) {
+            const goal = currentGoals.find(g => g.id === goalId);
+            return !!(goal && goal.locked);
+        }
+
+        function toggleGoalLock(goalId) {
+            const goal = currentGoals.find(g => g.id === goalId);
+            if (!goal) return;
+
+            goal.locked = !goal.locked;
+            renderGoalsChips();
+
+            if (lastResults) {
+                renderGoalsCards(lastResults.goal_progress);
+            }
+        }
+
+        function confirmRemoveLockedGoal(goalId) {
+            if (confirm('This goal is locked. Remove it anyway?')) {
+                removeGoal(goalId);
+            }
         }
 
         function initGoalChartInstance(ctxId, configuration) {
