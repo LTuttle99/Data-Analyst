@@ -488,6 +488,190 @@ class BookOfBusinessAnalyzer:
 
         return results
 
+    # ----------------------------------------------------------------------- #
+    # Goal suggestions ("based on past info, here's what to aim for")
+    # ----------------------------------------------------------------------- #
+
+    def _reference_period_bounds(self, period: str, anchor: pd.Timestamp):
+        """The same period one year prior — the historical baseline a suggested goal is built from."""
+        start, end = self._period_bounds(period, anchor)
+        return start - pd.DateOffset(years=1), end - pd.DateOffset(years=1)
+
+    def _period_actual(self, df, time_col, fin_col, id_col, projection_target, start, end):
+        if df is None or df.empty:
+            return 0.0
+
+        mask = (df[time_col] >= start) & (df[time_col] <= end)
+        subset = df[mask]
+
+        if subset.empty:
+            return 0.0
+
+        if projection_target == "premium":
+            return float(subset[fin_col].sum())
+
+        return float(subset[id_col].nunique()) if id_col else float(len(subset))
+
+    def _estimate_growth_rate(self, df, time_col, fin_col, id_col, projection_target, period, anchor_date):
+        """
+        Compare the most recent complete comparable period to the one a year before it
+        (e.g. last calendar year vs the year before). Returns None if there isn't enough
+        history for this scope to compute a meaningful rate.
+        """
+        ref_start, ref_end = self._reference_period_bounds(period, anchor_date)
+        prior_start, prior_end = ref_start - pd.DateOffset(years=1), ref_end - pd.DateOffset(years=1)
+
+        ref_actual = self._period_actual(df, time_col, fin_col, id_col, projection_target, ref_start, ref_end)
+        prior_actual = self._period_actual(df, time_col, fin_col, id_col, projection_target, prior_start, prior_end)
+
+        if prior_actual <= 0:
+            return None
+
+        growth = (ref_actual - prior_actual) / prior_actual
+
+        # Clip so a single noisy small-scope period can't produce an absurd suggestion.
+        return float(np.clip(growth, -0.6, 1.5))
+
+    def _round_target(self, value: float) -> float:
+        """Round a suggested target to a clean, presentable figure (e.g. 6,432,911 -> 6,400,000)."""
+        if value is None or value <= 0:
+            return 0.0
+
+        digits = len(str(int(value)))
+        magnitude = max(1, 10 ** max(0, digits - 2))
+
+        return float(round(value / magnitude) * magnitude)
+
+    def suggest_goal_candidates(
+        self,
+        mapping: dict,
+        projection_target: str = "premium",
+        period: str = "annual",
+        business_view: str = "all",
+        top_n: int = 3
+    ) -> list:
+        """
+        Propose goal candidates from historical performance: the overall book plus the
+        top N profit centers, agencies, and segments by volume. Each candidate reports last
+        year's actual for the same period, the book's own trailing growth rate, and three
+        target tiers (maintain / grow / stretch) derived from those two numbers.
+        """
+        fin_col = mapping.get("financial_metric")
+        time_col = mapping.get("timeline_metric")
+        cat_col = mapping.get("categorical_segment")
+        pc_col = mapping.get("profit_center")
+        id_col = mapping.get("client_id")
+        agency_col = mapping.get("agency_code")
+        biz_type_col = mapping.get("business_type")
+
+        if not fin_col or not time_col or fin_col not in self.df.columns or time_col not in self.df.columns:
+            raise ValueError("Financial and Timeline columns must be mapped and present to suggest goals.")
+
+        cat_col = cat_col if cat_col in self.df.columns else None
+        pc_col = pc_col if pc_col in self.df.columns else None
+        id_col = id_col if id_col in self.df.columns else None
+        agency_col = agency_col if agency_col in self.df.columns else None
+        biz_type_col = biz_type_col if biz_type_col in self.df.columns else None
+
+        cols = list(dict.fromkeys(
+            [fin_col, time_col] + [c for c in [cat_col, pc_col, id_col, agency_col, biz_type_col] if c]
+        ))
+
+        working_df = self.df[cols].copy()
+        working_df[time_col] = pd.to_datetime(working_df[time_col], errors="coerce")
+        working_df[fin_col] = pd.to_numeric(working_df[fin_col], errors="coerce").fillna(0)
+        working_df = working_df.dropna(subset=[time_col])
+        working_df = working_df[working_df[time_col] >= ANALYTICAL_BASELINE]
+
+        if pc_col:
+            working_df[pc_col] = working_df[pc_col].apply(self._normalize_categorical_value)
+        if agency_col:
+            working_df[agency_col] = working_df[agency_col].apply(self._normalize_categorical_value)
+        if id_col:
+            working_df[id_col] = working_df[id_col].fillna("Unknown")
+
+        if working_df.empty:
+            return []
+
+        anchor_date = working_df[time_col].max()
+
+        working_df = self._assign_business_type(working_df, id_col, time_col, biz_type_col)
+
+        if business_view == "new":
+            working_df = working_df[working_df["BusinessType"] == "New"]
+        elif business_view == "renewal":
+            working_df = working_df[working_df["BusinessType"] == "Renewal"]
+
+        if working_df.empty:
+            return []
+
+        # Organization-wide growth rate, used as a fallback for scopes with too little
+        # standalone history (e.g. a small agency with only a few months of data).
+        overall_growth = self._estimate_growth_rate(
+            working_df, time_col, fin_col, id_col, projection_target, period, anchor_date
+        )
+
+        scope_candidates = [("overall", None, "Overall Book")]
+
+        def top_values(col):
+            if not col or col not in working_df.columns:
+                return []
+
+            sums = working_df.groupby(col)[fin_col].sum().sort_values(ascending=False)
+            return list(sums.head(top_n).index)
+
+        for val in top_values(pc_col):
+            scope_candidates.append(("profit_center", val, f"Profit Center: {val}"))
+        for val in top_values(agency_col):
+            scope_candidates.append(("agency_code", val, f"Agency: {val}"))
+        for val in top_values(cat_col):
+            scope_candidates.append(("segment", val, f"Segment: {val}"))
+
+        suggestions = []
+
+        for scope_type, scope_value, scope_label in scope_candidates:
+            scoped_df = self._apply_goal_scope(working_df, scope_type, scope_value, pc_col, agency_col, cat_col)
+
+            ref_start, ref_end = self._reference_period_bounds(period, anchor_date)
+            cur_start, cur_end = self._period_bounds(period, anchor_date)
+
+            reference_actual = self._period_actual(
+                scoped_df, time_col, fin_col, id_col, projection_target, ref_start, ref_end
+            )
+
+            if reference_actual <= 0:
+                continue
+
+            growth = self._estimate_growth_rate(
+                scoped_df, time_col, fin_col, id_col, projection_target, period, anchor_date
+            )
+            data_sufficient = growth is not None
+
+            if growth is None:
+                growth = overall_growth if overall_growth is not None else 0.0
+
+            suggestions.append({
+                "scope_type": scope_type,
+                "scope_value": scope_value,
+                "scope_label": scope_label,
+                "period": period,
+                "period_start": cur_start.strftime("%Y-%m-%d"),
+                "period_end": cur_end.strftime("%Y-%m-%d"),
+                "reference_period_start": ref_start.strftime("%Y-%m-%d"),
+                "reference_period_end": ref_end.strftime("%Y-%m-%d"),
+                "reference_actual": float(reference_actual),
+                "growth_rate_pct": float(growth * 100),
+                "data_sufficient": data_sufficient,
+                "metric_type": projection_target,
+                "suggestions": {
+                    "maintain": self._round_target(reference_actual),
+                    "grow": self._round_target(reference_actual * (1 + growth)),
+                    "stretch": self._round_target(reference_actual * (1 + growth + 0.05))
+                }
+            })
+
+        return suggestions
+
     def _assign_business_type(self, working_df, id_col, time_col, biz_type_col):
         if biz_type_col and biz_type_col in working_df.columns:
             working_df["BusinessType"] = working_df[biz_type_col].apply(self._classify_business_type)
