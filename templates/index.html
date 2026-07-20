@@ -284,6 +284,43 @@
                 </div>
             </section>
 
+            <section id="ai-insight-card" class="bg-slate-950 border border-cyan-500/30 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 class="text-sm font-medium tracking-wide text-cyan-300">AI Portfolio Insight Engine</h4>
+                        <p class="text-xs text-slate-500 mt-1">
+                            Automated business observations generated from forecast, retention, concentration, goal, and segment metrics.
+                        </p>
+                    </div>
+
+                    <span id="ai-health-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400">
+                        Health: —
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+                    <div class="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Portfolio Health Score</p>
+                        <p id="ai-health-score" class="text-3xl font-bold text-white mt-1">0</p>
+                        <p id="ai-health-label" class="text-xs text-slate-400 mt-1">Insufficient Data</p>
+                    </div>
+
+                    <div class="md:col-span-3 bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">AI Executive Readout</p>
+                        <p id="ai-executive-summary" class="text-sm text-slate-300 leading-relaxed">
+                            Upload and analyze data to generate AI insights.
+                        </p>
+                    </div>
+                </div>
+
+                <div id="ai-insight-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5"></div>
+
+                <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Recommended Review Actions</p>
+                    <ul id="ai-action-list" class="space-y-2 text-sm text-slate-300"></ul>
+                </div>
+            </section>
+
             <section id="business-split-card" class="bg-slate-950 border border-slate-800 rounded-xl p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h4 class="text-sm font-medium tracking-wide text-slate-300">New Business vs Renewal Split</h4>
@@ -521,7 +558,7 @@
 
             if (profitCenters && profitCenters.length > 0) {
                 profitCenters.forEach(pc => {
-                    dropdown.innerHTML += `<option value="${pc}">${pc}</option>`;
+                    dropdown.innerHTML += `<option value="${escapeHtml(pc)}">${escapeHtml(pc)}</option>`;
                 });
             }
         }
@@ -559,7 +596,7 @@
         function renderAgencyCheckboxList(searchTerm) {
             const list = document.getElementById('agency-checkbox-list');
             const term = (searchTerm || '').toLowerCase();
-            const filtered = allAgencyCodes.filter(c => c.toLowerCase().includes(term));
+            const filtered = allAgencyCodes.filter(c => String(c).toLowerCase().includes(term));
 
             if (filtered.length === 0) {
                 list.innerHTML = '<p class="text-xs text-slate-500 text-center py-3">No matching agency codes.</p>';
@@ -568,13 +605,13 @@
 
             list.innerHTML = filtered.map(code => {
                 const checked = pendingAgencySelections.has(code) ? 'checked' : '';
-                const safeId = `agency-cb-${code.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                const safeCode = code.replace(/'/g, "\\'");
+                const safeId = `agency-cb-${String(code).replace(/[^a-zA-Z0-9]/g, '_')}`;
+                const safeCode = String(code).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 
                 return `
                     <label for="${safeId}" class="flex items-center px-2 py-1 rounded hover:bg-slate-900 cursor-pointer text-xs text-slate-200">
                         <input type="checkbox" id="${safeId}" ${checked} onchange="toggleAgencyPending('${safeCode}', this.checked)" class="mr-2 accent-teal-500">
-                        ${code}
+                        ${escapeHtml(code)}
                     </label>
                 `;
             }).join('');
@@ -596,7 +633,7 @@
             const term = (document.getElementById('agency-search-input').value || '').toLowerCase();
 
             allAgencyCodes
-                .filter(c => c.toLowerCase().includes(term))
+                .filter(c => String(c).toLowerCase().includes(term))
                 .forEach(c => pendingAgencySelections.add(c));
 
             renderAgencyCheckboxList(document.getElementById('agency-search-input').value);
@@ -606,7 +643,7 @@
             const term = (document.getElementById('agency-search-input').value || '').toLowerCase();
 
             allAgencyCodes
-                .filter(c => c.toLowerCase().includes(term))
+                .filter(c => String(c).toLowerCase().includes(term))
                 .forEach(c => pendingAgencySelections.delete(c));
 
             renderAgencyCheckboxList(document.getElementById('agency-search-input').value);
@@ -690,7 +727,7 @@
 
                 const optionsHtml = allColumns.map(col => {
                     const selected = inferred[field.id] === col ? 'selected' : '';
-                    return `<option value="${col}" ${selected}>${col}</option>`;
+                    return `<option value="${escapeHtml(col)}" ${selected}>${escapeHtml(col)}</option>`;
                 }).join('');
 
                 target.innerHTML += `
@@ -925,6 +962,7 @@
             renderBusinessSplit(res.business_split);
             renderGoalGauge(res.goal_progress);
             renderForecastOutlook(res.forecast_outlook);
+            renderAIInsights(res.ai_insights);
             renderAnomalies(res.anomalies);
             renderTrendChart(res.historical_timeline);
             renderSegmentChart(res.segment_distribution);
@@ -985,6 +1023,95 @@
 
             document.getElementById('forecast-executive-summary').innerText =
                 fo.executive_summary || "Not enough data is available to produce a reliable year-end projection.";
+        }
+
+        function renderAIInsights(ai) {
+            if (!ai) return;
+
+            const score = Number(ai.portfolio_health_score || 0);
+            const label = ai.portfolio_health_label || "Insufficient Data";
+            const status = ai.portfolio_health_status || "neutral";
+
+            const badge = document.getElementById('ai-health-badge');
+            const scoreEl = document.getElementById('ai-health-score');
+            const labelEl = document.getElementById('ai-health-label');
+            const summaryEl = document.getElementById('ai-executive-summary');
+            const listEl = document.getElementById('ai-insight-list');
+            const actionEl = document.getElementById('ai-action-list');
+
+            scoreEl.innerText = score.toFixed(1);
+            labelEl.innerText = label;
+            summaryEl.innerText = ai.executive_summary || "Not enough data is available to generate AI insights.";
+
+            if (status === "positive") {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400";
+                scoreEl.className = "text-3xl font-bold text-emerald-400 mt-1";
+            } else if (status === "warning") {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/20 text-amber-400";
+                scoreEl.className = "text-3xl font-bold text-amber-400 mt-1";
+            } else if (status === "risk") {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-red-500/20 text-red-400";
+                scoreEl.className = "text-3xl font-bold text-red-400 mt-1";
+            } else {
+                badge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400";
+                scoreEl.className = "text-3xl font-bold text-white mt-1";
+            }
+
+            badge.innerText = `Health: ${label}`;
+
+            const insights = ai.insights || [];
+
+            if (insights.length === 0) {
+                listEl.innerHTML = `
+                    <div class="md:col-span-2 bg-slate-900/60 border border-slate-800 rounded-lg p-4 text-sm text-slate-400">
+                        No AI insights are available for the current selection.
+                    </div>
+                `;
+            } else {
+                listEl.innerHTML = insights.map(item => {
+                    let borderClass = "border-slate-800";
+                    let titleClass = "text-slate-200";
+
+                    if (item.severity === "positive") {
+                        borderClass = "border-emerald-500/20";
+                        titleClass = "text-emerald-300";
+                    } else if (item.severity === "warning") {
+                        borderClass = "border-amber-500/20";
+                        titleClass = "text-amber-300";
+                    } else if (item.severity === "risk") {
+                        borderClass = "border-red-500/20";
+                        titleClass = "text-red-300";
+                    }
+
+                    return `
+                        <div class="bg-slate-900/60 border ${borderClass} rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <div class="text-xl">${item.icon || "🤖"}</div>
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">${escapeHtml(item.category || "Insight")}</p>
+                                    <p class="text-sm font-bold ${titleClass} mt-1">${escapeHtml(item.title || "AI Insight")}</p>
+                                    <p class="text-sm text-slate-300 mt-2 leading-relaxed">${escapeHtml(item.message || "")}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            const actions = ai.recommended_actions || [];
+
+            if (actions.length === 0) {
+                actionEl.innerHTML = `
+                    <li class="text-slate-500">No recommended actions available for the current selection.</li>
+                `;
+            } else {
+                actionEl.innerHTML = actions.map(action => `
+                    <li class="flex items-start gap-2">
+                        <span class="text-cyan-400 mt-0.5">•</span>
+                        <span>${escapeHtml(action)}</span>
+                    </li>
+                `).join('');
+            }
         }
 
         function renderBusinessSplit(bs) {
@@ -1171,9 +1298,9 @@
             if (anomalies && anomalies.length > 0) {
                 tableBody.innerHTML = anomalies.map(item => `
                     <tr class="hover:bg-slate-900/40 font-mono text-xs">
-                        <td class="py-3 pl-4 text-slate-200">${item.identifier}</td>
+                        <td class="py-3 pl-4 text-slate-200">${escapeHtml(item.identifier)}</td>
                         <td class="py-3 text-red-400 font-semibold">${formatValueByMetric(item.value, "premium")}</td>
-                        <td class="py-3 text-slate-400 pr-4">${item.reason}</td>
+                        <td class="py-3 text-slate-400 pr-4">${escapeHtml(item.reason)}</td>
                     </tr>
                 `).join('');
             } else {
@@ -1398,6 +1525,15 @@
                     }
                 }
             });
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
         }
     </script>
 </body>
