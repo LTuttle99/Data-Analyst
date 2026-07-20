@@ -12,6 +12,14 @@ RENEWAL_KEYWORDS = ["renewal", "renew", "renewed", "existing", "ren"]
 
 
 class BookOfBusinessAnalyzer:
+    """
+    Loads a single uploaded book-of-business ledger (CSV/XLSX) and provides schema inference,
+    filtering, KPI computation, seasonality-aware forecasting, and multi-goal pacing analysis.
+
+    One instance corresponds to one uploaded file for the lifetime of a session; `self.df`
+    holds the cleaned raw data and all analysis methods operate on filtered copies of it.
+    """
+
     def __init__(self, file_bytes: bytes, file_name: str):
         self.file_name = file_name
 
@@ -192,15 +200,119 @@ class BookOfBusinessAnalyzer:
             "aggressive_year_end": 0.0,
             "remaining_months": 0,
             "growth_vs_previous_year_pct": 0.0,
-            "needed_per_remaining_month": 0.0,
-            "projected_gap_to_goal": 0.0,
-            "goal_value": 0.0,
-            "goal_status": "No Goal Set",
             "confidence_score": 0.0,
             "confidence_label": "Insufficient Data",
             "trend_direction": "Flat",
             "monthly_forecast": [],
+            "seasonal_index": {},
             "executive_summary": "Not enough data is available to produce a reliable year-end projection."
+        }
+
+    def _build_monthly_series(self, df, time_col, fin_col, id_col, target_series="premium"):
+        """Aggregate a (already scoped/filtered) dataframe into a monthly time series."""
+        if df is None or df.empty or time_col not in df.columns:
+            return pd.DataFrame(columns=["YearMonth", "premium", "count"])
+
+        d = df.copy()
+        d[time_col] = pd.to_datetime(d[time_col], errors="coerce")
+        d = d.dropna(subset=[time_col])
+
+        if d.empty:
+            return pd.DataFrame(columns=["YearMonth", "premium", "count"])
+
+        d["YearMonth"] = d[time_col].dt.to_period("M")
+        grouped = d.groupby("YearMonth")
+
+        monthly = pd.DataFrame({
+            "premium": grouped[fin_col].sum() if fin_col in d.columns else grouped.size(),
+            "count": grouped[id_col].nunique() if id_col and id_col in d.columns else grouped.size()
+        }).reset_index()
+
+        return monthly.sort_values("YearMonth").reset_index(drop=True)
+
+    def _seasonal_trend_forecast(self, monthly_df, target_series, periods_ahead):
+        """
+        Produce a trend + seasonality aware forecast for the next `periods_ahead` months.
+
+        Method: fit a linear trend across all available months, derive a per-calendar-month
+        seasonal multiplier from the average ratio of actual-to-trend, normalize the
+        multipliers to average 1.0, then project future months as trend * seasonal index.
+        Confidence bands are built from the standard deviation of de-seasonalized residuals.
+        """
+        empty_diagnostics = {"r_squared": 0.0, "residual_std": 0.0, "slope": 0.0, "seasonal_index": {}}
+
+        if monthly_df is None or monthly_df.empty or len(monthly_df) < 2 or periods_ahead <= 0:
+            return [], empty_diagnostics
+
+        mdf = monthly_df.copy().sort_values("YearMonth").reset_index(drop=True)
+        mdf["CalMonth"] = mdf["YearMonth"].dt.month
+
+        X = np.arange(len(mdf)).reshape(-1, 1)
+        y = mdf[target_series].astype(float).values
+
+        model = LinearRegression().fit(X, y)
+        trend_fitted = model.predict(X)
+
+        try:
+            r_squared = float(model.score(X, y))
+        except Exception:
+            r_squared = 0.0
+
+        safe_trend = np.where(np.abs(trend_fitted) < 1e-9, np.nan, trend_fitted)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = y / safe_trend
+
+        mdf["_ratio"] = ratio
+
+        seasonal_index = {}
+        for m in range(1, 13):
+            vals = mdf.loc[mdf["CalMonth"] == m, "_ratio"].replace([np.inf, -np.inf], np.nan).dropna()
+            seasonal_index[m] = float(vals.mean()) if len(vals) > 0 else 1.0
+
+        observed_vals = [v for v in seasonal_index.values() if v is not None and not np.isnan(v)]
+        mean_idx = float(np.mean(observed_vals)) if observed_vals else 1.0
+
+        if mean_idx and not np.isnan(mean_idx) and mean_idx != 0:
+            seasonal_index = {m: v / mean_idx for m, v in seasonal_index.items()}
+
+        # Clip extreme seasonal swings so sparse-history months don't produce wild forecasts.
+        seasonal_index = {m: float(np.clip(v, 0.4, 2.5)) for m, v in seasonal_index.items()}
+
+        deseasonalized_fitted = trend_fitted * np.array([seasonal_index.get(m, 1.0) for m in mdf["CalMonth"]])
+        residuals = y - deseasonalized_fitted
+        residual_std = float(np.std(residuals)) if len(residuals) > 1 else 0.0
+
+        last_period = mdf["YearMonth"].max()
+        future_X = np.arange(len(mdf), len(mdf) + periods_ahead).reshape(-1, 1)
+        future_trend = model.predict(future_X)
+
+        future = []
+
+        for i, base_pred in enumerate(future_trend):
+            future_period = last_period + i + 1
+            cal_month = int(future_period.month)
+            seasonal_mult = seasonal_index.get(cal_month, 1.0)
+            expected = max(0.0, float(base_pred) * seasonal_mult)
+            conservative = max(0.0, expected - residual_std)
+            aggressive = max(0.0, expected + residual_std)
+
+            future.append({
+                "period": str(future_period),
+                "year": int(future_period.year),
+                "month": cal_month,
+                "expected_value": expected,
+                "conservative_value": conservative,
+                "aggressive_value": aggressive
+            })
+
+        slope = float(model.coef_[0]) if hasattr(model, "coef_") and len(model.coef_) > 0 else 0.0
+
+        return future, {
+            "r_squared": r_squared,
+            "residual_std": residual_std,
+            "slope": slope,
+            "seasonal_index": seasonal_index
         }
 
     def _empty_ai_insights(self):
@@ -215,63 +327,166 @@ class BookOfBusinessAnalyzer:
             ]
         }
 
-    def _compute_goal_progress(self, actual_value, goal_value, start_date, end_date, goal_period_days: int = 365) -> dict:
-        if not goal_value or goal_value <= 0:
-            return {
-                "goal": 0,
-                "actual": float(actual_value),
-                "achievement_pct": 0,
-                "expected_pct": 0,
-                "gap_to_goal": 0,
-                "projected_year_end": 0,
-                "days_elapsed": 0,
-                "status": "no_goal_set"
+    def _period_bounds(self, period: str, anchor: pd.Timestamp):
+        """Return (start, end) timestamps for the annual/quarterly/monthly window containing `anchor`."""
+        anchor = pd.Timestamp(anchor)
+
+        if period == "monthly":
+            start = pd.Timestamp(year=anchor.year, month=anchor.month, day=1)
+            end = start + pd.DateOffset(months=1) - pd.Timedelta(days=1)
+        elif period == "quarterly":
+            q_start_month = ((anchor.month - 1) // 3) * 3 + 1
+            start = pd.Timestamp(year=anchor.year, month=q_start_month, day=1)
+            end = start + pd.DateOffset(months=3) - pd.Timedelta(days=1)
+        else:
+            start = pd.Timestamp(year=anchor.year, month=1, day=1)
+            end = pd.Timestamp(year=anchor.year, month=12, day=31)
+
+        return start, end
+
+    def _apply_goal_scope(self, df, scope_type, scope_value, pc_col, agency_col, cat_col):
+        """Filter a dataframe down to the dimension a single goal targets."""
+        if scope_type == "profit_center" and pc_col and pc_col in df.columns:
+            normalized = self._normalize_categorical_value(scope_value)
+            return df[df[pc_col] == normalized]
+
+        if scope_type == "agency_code" and agency_col and agency_col in df.columns:
+            normalized = self._normalize_categorical_value(scope_value)
+            return df[df[agency_col] == normalized]
+
+        if scope_type == "segment" and cat_col and cat_col in df.columns:
+            return df[df[cat_col].astype(str) == str(scope_value)]
+
+        return df
+
+    def compute_goals(
+        self,
+        working_df,
+        fin_col,
+        id_col,
+        time_col,
+        pc_col,
+        agency_col,
+        cat_col,
+        projection_target,
+        goals,
+        anchor_date
+    ) -> list:
+        """
+        Compute pacing + a seasonality-aware projection for each goal in `goals`.
+
+        Each goal dict supports: id, label, period ("annual"/"quarterly"/"monthly"),
+        scope_type ("overall"/"profit_center"/"agency_code"/"segment"), scope_value, target_value.
+        """
+        target_series = "premium" if projection_target == "premium" else "count"
+        results = []
+
+        if not goals:
+            return results
+
+        if anchor_date is None or pd.isna(anchor_date):
+            anchor_date = pd.Timestamp(datetime.now().date())
+
+        for idx, g in enumerate(goals):
+            goal_id = g.get("id") or f"goal_{idx + 1}"
+            label = g.get("label") or "Goal"
+            period = g.get("period") if g.get("period") in ("annual", "quarterly", "monthly") else "annual"
+            scope_type = g.get("scope_type") if g.get("scope_type") in (
+                "overall", "profit_center", "agency_code", "segment"
+            ) else "overall"
+            scope_value = g.get("scope_value")
+
+            try:
+                target_value = float(g.get("target_value") or 0)
+            except (ValueError, TypeError):
+                target_value = 0.0
+
+            start, end = self._period_bounds(period, anchor_date)
+            base_result = {
+                "id": goal_id,
+                "label": label,
+                "period": period,
+                "scope_type": scope_type,
+                "scope_value": scope_value,
+                "metric_type": projection_target,
+                "period_start": start.strftime("%Y-%m-%d"),
+                "period_end": end.strftime("%Y-%m-%d"),
+                "days_total": int((end - start).days + 1)
             }
 
-        try:
-            start = pd.to_datetime(start_date) if start_date is not None else None
-            end = pd.to_datetime(end_date) if end_date is not None else None
-        except Exception:
-            start = None
-            end = None
+            scoped_df = self._apply_goal_scope(working_df, scope_type, scope_value, pc_col, agency_col, cat_col)
 
-        days_elapsed = 0
+            if target_value <= 0:
+                results.append({
+                    **base_result,
+                    "target": 0.0,
+                    "actual": 0.0,
+                    "achievement_pct": 0.0,
+                    "expected_pct": 0.0,
+                    "gap_to_goal": 0.0,
+                    "projected_period_end": 0.0,
+                    "days_elapsed": 0,
+                    "status": "no_goal_set"
+                })
+                continue
 
-        if start is not None and end is not None and end >= start:
-            days_elapsed = max(1, (end - start).days + 1)
+            effective_end_for_actual = min(end, anchor_date)
+            in_period = (scoped_df[time_col] >= start) & (scoped_df[time_col] <= effective_end_for_actual)
+            period_df = scoped_df[in_period]
 
-        expected_pct = min(100.0, (days_elapsed / goal_period_days) * 100) if goal_period_days > 0 else 0
-        achievement_pct = (actual_value / goal_value) * 100 if goal_value > 0 else 0
-        gap_to_goal = float(actual_value - goal_value)
-
-        projected_year_end = float(actual_value)
-
-        if days_elapsed > 0 and goal_period_days > 0:
-            daily_rate = actual_value / days_elapsed
-            projected_year_end = float(daily_rate * goal_period_days)
-
-        if expected_pct <= 0:
-            status = "no_time_elapsed"
-        else:
-            pace_ratio = achievement_pct / expected_pct
-
-            if pace_ratio >= 1.0:
-                status = "ahead"
-            elif pace_ratio >= 0.8:
-                status = "on_pace"
+            if projection_target == "premium":
+                actual = float(period_df[fin_col].sum()) if not period_df.empty else 0.0
             else:
-                status = "behind"
+                actual = float(period_df[id_col].nunique()) if id_col and not period_df.empty else float(len(period_df))
 
-        return {
-            "goal": float(goal_value),
-            "actual": float(actual_value),
-            "achievement_pct": float(achievement_pct),
-            "expected_pct": float(expected_pct),
-            "gap_to_goal": float(gap_to_goal),
-            "projected_year_end": float(projected_year_end),
-            "days_elapsed": int(days_elapsed),
-            "status": status
-        }
+            days_total = max(1, base_result["days_total"])
+            days_elapsed = max(0, (effective_end_for_actual - start).days + 1) if effective_end_for_actual >= start else 0
+
+            expected_pct = min(100.0, (days_elapsed / days_total) * 100)
+            achievement_pct = (actual / target_value) * 100
+            gap_to_goal = float(actual - target_value)
+
+            projected_period_end = float((actual / days_elapsed) * days_total) if days_elapsed > 0 else 0.0
+
+            # Where at least one full calendar month remains in the goal period, refine the
+            # run-rate projection using the seasonality-aware monthly forecast instead.
+            anchor_month_period = pd.Period(anchor_date, freq="M")
+            end_month_period = pd.Period(end, freq="M")
+
+            if anchor_month_period < end_month_period:
+                remaining_months = int(end_month_period.ordinal - anchor_month_period.ordinal)
+                monthly_series = self._build_monthly_series(scoped_df, time_col, fin_col, id_col, target_series)
+
+                if len(monthly_series) >= 2:
+                    future_vals, _diag = self._seasonal_trend_forecast(monthly_series, target_series, remaining_months)
+                    remaining_forecast = sum(item["expected_value"] for item in future_vals)
+                    projected_period_end = float(actual + remaining_forecast)
+
+            if expected_pct <= 0:
+                status = "no_time_elapsed"
+            else:
+                pace_ratio = achievement_pct / expected_pct
+
+                if pace_ratio >= 1.0:
+                    status = "ahead"
+                elif pace_ratio >= 0.8:
+                    status = "on_pace"
+                else:
+                    status = "behind"
+
+            results.append({
+                **base_result,
+                "target": float(target_value),
+                "actual": float(actual),
+                "achievement_pct": float(achievement_pct),
+                "expected_pct": float(expected_pct),
+                "gap_to_goal": float(gap_to_goal),
+                "projected_period_end": float(projected_period_end),
+                "days_elapsed": int(days_elapsed),
+                "status": status
+            })
+
+        return results
 
     def _assign_business_type(self, working_df, id_col, time_col, biz_type_col):
         if biz_type_col and biz_type_col in working_df.columns:
@@ -325,13 +540,12 @@ class BookOfBusinessAnalyzer:
 
         return working_df
 
-    def _compute_forecast_outlook(self, monthly_df, target_series, projection_target, goal_value):
+    def _compute_forecast_outlook(self, monthly_df, target_series, projection_target):
         if monthly_df is None or monthly_df.empty or len(monthly_df) < 2:
             return self._empty_forecast_outlook(projection_target)
 
         forecast_df = monthly_df.copy().sort_values("YearMonth").reset_index(drop=True)
         forecast_df["Year"] = forecast_df["YearMonth"].dt.year
-        forecast_df["Month"] = forecast_df["YearMonth"].dt.month
 
         current_year = int(forecast_df["Year"].max())
         previous_year = current_year - 1
@@ -345,42 +559,14 @@ class BookOfBusinessAnalyzer:
         last_period = forecast_df["YearMonth"].max()
         remaining_months = max(0, 12 - int(last_period.month))
 
-        X = np.arange(len(forecast_df)).reshape(-1, 1)
-        y = forecast_df[target_series].astype(float).values
+        future_monthly, diagnostics = self._seasonal_trend_forecast(forecast_df, target_series, remaining_months)
 
-        model = LinearRegression()
-        model.fit(X, y)
+        r_squared = diagnostics["r_squared"]
+        residual_std = diagnostics["residual_std"]
+        slope = diagnostics["slope"]
 
-        try:
-            r_squared = float(model.score(X, y))
-        except Exception:
-            r_squared = 0.0
-
-        fitted = model.predict(X)
-        residuals = y - fitted
-
-        residual_std = float(np.std(residuals)) if len(residuals) > 1 else 0.0
-        avg_monthly = float(np.mean(y)) if len(y) > 0 else 0.0
+        avg_monthly = float(forecast_df[target_series].astype(float).mean()) if len(forecast_df) > 0 else 0.0
         volatility_ratio = abs(residual_std / avg_monthly) if avg_monthly != 0 else 1.0
-
-        future_monthly = []
-
-        if remaining_months > 0:
-            future_X = np.arange(len(forecast_df), len(forecast_df) + remaining_months).reshape(-1, 1)
-            future_predictions = model.predict(future_X)
-
-            for i, pred in enumerate(future_predictions):
-                future_month = last_period + i + 1
-                expected_value = max(0.0, float(pred))
-                conservative_value = max(0.0, expected_value - residual_std)
-                aggressive_value = max(0.0, expected_value + residual_std)
-
-                future_monthly.append({
-                    "period": str(future_month),
-                    "expected_value": expected_value,
-                    "conservative_value": conservative_value,
-                    "aggressive_value": aggressive_value
-                })
 
         expected_future_total = sum(item["expected_value"] for item in future_monthly)
         conservative_future_total = sum(item["conservative_value"] for item in future_monthly)
@@ -394,19 +580,6 @@ class BookOfBusinessAnalyzer:
 
         if previous_year_actual > 0:
             growth_vs_previous_year_pct = ((projected_year_end - previous_year_actual) / previous_year_actual) * 100
-
-        goal_status = "No Goal Set"
-        projected_gap_to_goal = 0.0
-        needed_per_remaining_month = 0.0
-
-        if goal_value and goal_value > 0:
-            projected_gap_to_goal = float(projected_year_end - goal_value)
-            goal_status = "Projected Above Goal" if projected_gap_to_goal >= 0 else "Projected Below Goal"
-
-            if remaining_months > 0:
-                needed_per_remaining_month = max(0.0, float((goal_value - current_actual) / remaining_months))
-
-        slope = float(model.coef_[0]) if hasattr(model, "coef_") and len(model.coef_) > 0 else 0.0
 
         if slope > 0:
             trend_direction = "Increasing"
@@ -438,20 +611,12 @@ class BookOfBusinessAnalyzer:
         else:
             growth_phrase = "no prior-year comparison is available"
 
-        if goal_value and goal_value > 0:
-            if projected_gap_to_goal >= 0:
-                goal_phrase = f"The current trend is projected to finish above goal by {abs(projected_gap_to_goal):,.0f}."
-            else:
-                goal_phrase = f"The current trend is projected to finish below goal by {abs(projected_gap_to_goal):,.0f}."
-        else:
-            goal_phrase = "No annual goal is currently applied, so goal variance is not calculated."
-
         executive_summary = (
-            f"Based on current monthly performance, the selected portfolio is projected to finish "
+            f"Based on current monthly performance and seasonal patterns, the selected portfolio is projected to finish "
             f"{current_year} at approximately {projected_year_end:,.0f} in {metric_label}. "
             f"This represents {growth_phrase}. "
             f"The forecast confidence is {confidence_label.lower()} based on available history, trend fit, and volatility. "
-            f"{goal_phrase}"
+            f"See the Goals panel for goal-specific pacing and projections."
         )
 
         return {
@@ -465,14 +630,11 @@ class BookOfBusinessAnalyzer:
             "aggressive_year_end": float(aggressive_year_end),
             "remaining_months": int(remaining_months),
             "growth_vs_previous_year_pct": float(growth_vs_previous_year_pct),
-            "needed_per_remaining_month": float(needed_per_remaining_month),
-            "projected_gap_to_goal": float(projected_gap_to_goal),
-            "goal_value": float(goal_value) if goal_value else 0.0,
-            "goal_status": goal_status,
             "confidence_score": float(confidence_score),
             "confidence_label": confidence_label,
             "trend_direction": trend_direction,
             "monthly_forecast": future_monthly,
+            "seasonal_index": diagnostics.get("seasonal_index", {}),
             "executive_summary": executive_summary
         }
 
@@ -486,7 +648,7 @@ class BookOfBusinessAnalyzer:
         pareto_ratio,
         business_split,
         forecast_outlook,
-        goal_progress,
+        primary_goal,
         segment_data,
         anomalies,
         projection_target
@@ -500,8 +662,13 @@ class BookOfBusinessAnalyzer:
         growth_pct = float(forecast_outlook.get("growth_vs_previous_year_pct", 0) or 0)
         confidence_label = forecast_outlook.get("confidence_label", "Insufficient Data")
         trend_direction = forecast_outlook.get("trend_direction", "Flat")
-        goal_status = forecast_outlook.get("goal_status", "No Goal Set")
-        projected_gap_to_goal = float(forecast_outlook.get("projected_gap_to_goal", 0) or 0)
+
+        goal_status = "No Goal Set"
+        projected_gap_to_goal = 0.0
+
+        if primary_goal and float(primary_goal.get("target", 0) or 0) > 0:
+            projected_gap_to_goal = float(primary_goal.get("projected_period_end", 0) or 0) - float(primary_goal.get("target", 0) or 0)
+            goal_status = "Projected Above Goal" if projected_gap_to_goal >= 0 else "Projected Below Goal"
 
         new_premium = float(business_split.get("new_business_premium", 0) or 0)
         renewal_premium = float(business_split.get("renewal_premium", 0) or 0)
@@ -901,8 +1068,20 @@ class BookOfBusinessAnalyzer:
         include_future_dates: bool = False,
         selected_agency_codes: list = None,
         goal_value: float = 0,
+        goals: list = None,
         business_view: str = "all"
     ) -> dict:
+        """
+        Run the full book-of-business analysis pipeline: filter/scope the raw data per the
+        request, compute KPIs, retention/concentration metrics, a seasonality-aware forecast,
+        multi-goal pacing, and rule-based AI insights.
+
+        Raises ValueError if the required financial/timeline columns are missing or not
+        present in the uploaded file (e.g. a mapping left over from a previously loaded file).
+        """
+        if not isinstance(mapping, dict):
+            raise ValueError("A column mapping is required to run analysis.")
+
         fin_col = mapping.get("financial_metric")
         time_col = mapping.get("timeline_metric")
         cat_col = mapping.get("categorical_segment")
@@ -913,6 +1092,22 @@ class BookOfBusinessAnalyzer:
 
         if not fin_col or not time_col:
             raise ValueError("Financial and Timeline metrics are required fields.")
+
+        if fin_col not in self.df.columns or time_col not in self.df.columns:
+            raise ValueError(
+                "The mapped Financial or Timeline column was not found in the uploaded file. "
+                "This can happen if the mapping is left over from a different file — "
+                "re-upload the file and confirm the schema mapping again."
+            )
+
+        # Optional mappings may reference a column that no longer exists (e.g. a stale mapping
+        # or a saved view applied to a different file). Drop those silently rather than raising,
+        # since the analysis can still run without them.
+        cat_col = cat_col if cat_col in self.df.columns else None
+        pc_col = pc_col if pc_col in self.df.columns else None
+        id_col = id_col if id_col in self.df.columns else None
+        agency_col = agency_col if agency_col in self.df.columns else None
+        biz_type_col = biz_type_col if biz_type_col in self.df.columns else None
 
         cols_to_keep = [fin_col, time_col]
 
@@ -1008,7 +1203,23 @@ class BookOfBusinessAnalyzer:
         elif business_view == "renewal":
             working_df = working_df[working_df["BusinessType"] == "Renewal"]
 
+        effective_goals = goals if goals else (
+            [{
+                "id": "primary",
+                "label": "Overall Goal",
+                "period": "annual",
+                "scope_type": "overall",
+                "scope_value": None,
+                "target_value": goal_value
+            }] if goal_value and goal_value > 0 else []
+        )
+
         if working_df.empty:
+            empty_goal_progress = self.compute_goals(
+                working_df, fin_col, id_col, time_col, pc_col, agency_col, cat_col,
+                projection_target, effective_goals, effective_end
+            )
+
             return {
                 "kpis": {
                     "total_premium": 0,
@@ -1033,7 +1244,7 @@ class BookOfBusinessAnalyzer:
                 "ai_insights": self._empty_ai_insights(),
                 "anomalies": [],
                 "vintage_cohorts": {},
-                "goal_progress": self._compute_goal_progress(0, goal_value, effective_start, effective_end),
+                "goal_progress": empty_goal_progress,
                 "business_split": business_split,
                 "diagnostics": {
                     "future_records_removed": future_records_removed,
@@ -1186,9 +1397,15 @@ class BookOfBusinessAnalyzer:
         forecast_outlook = self._compute_forecast_outlook(
             monthly_df=monthly_df,
             target_series=target_series,
-            projection_target=projection_target,
-            goal_value=goal_value
+            projection_target=projection_target
         )
+
+        goal_progress = self.compute_goals(
+            working_df, fin_col, id_col, time_col, pc_col, agency_col, cat_col,
+            projection_target, effective_goals, effective_end
+        )
+
+        primary_goal = goal_progress[0] if goal_progress else None
 
         anomalies = []
 
@@ -1206,10 +1423,6 @@ class BookOfBusinessAnalyzer:
                         )
                     })
 
-        actual_for_goal = total_premium if projection_target == "premium" else total_accounts
-        goal_progress = self._compute_goal_progress(actual_for_goal, goal_value, effective_start, effective_end)
-        goal_progress["metric_type"] = projection_target
-
         ai_insights = self._generate_ai_insights(
             total_premium=total_premium,
             total_accounts=total_accounts,
@@ -1219,7 +1432,7 @@ class BookOfBusinessAnalyzer:
             pareto_ratio=pareto_ratio,
             business_split=business_split,
             forecast_outlook=forecast_outlook,
-            goal_progress=goal_progress,
+            primary_goal=primary_goal,
             segment_data=segment_data,
             anomalies=anomalies,
             projection_target=projection_target
