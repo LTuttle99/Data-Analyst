@@ -71,6 +71,7 @@ class AnalyzeRequest(BaseModel):
     goals: list[GoalConfig] = Field(default_factory=list)
     business_view: str = "all"
     target: str = "primary"  # "primary" or "compare" — which uploaded file to analyze
+    forecast_horizon_months: int = 24
 
 
 class SuggestGoalsRequest(BaseModel):
@@ -324,7 +325,8 @@ async def analyze_data(body: AnalyzeRequest, request: Request):
             selected_agency_codes=body.selected_agency_codes,
             goal_value=body.goal_value,
             goals=[_model_to_dict(g) for g in body.goals],
-            business_view=body.business_view
+            business_view=body.business_view,
+            forecast_horizon_months=body.forecast_horizon_months
         )
 
         resp = JSONResponse(content=results)
