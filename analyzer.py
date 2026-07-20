@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 
 
-ANALYTICAL_BASELINE = pd.Timestamp("2016-01-01")
+ANALYTICAL_BASELINE = pd.Timestamp("2020-01-01")
 
 NEW_BUSINESS_KEYWORDS = ["new", "nb", "new business", "acquisition", "acquired"]
 RENEWAL_KEYWORDS = ["renewal", "renew", "renewed", "existing", "ren"]
