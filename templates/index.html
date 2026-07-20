@@ -6,9 +6,31 @@
     <title>Enterprise Book of Business Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.25s ease-out; }
+
+        @media print {
+            #upload-card, #mapping-card, .no-print, button { display: none !important; }
+            body { background: white !important; color: black !important; }
+            #workspace-dashboard, #workspace-dashboard * { background: white !important; color: black !important; border-color: #ccc !important; }
+        }
+    </style>
 </head>
 
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 no-print"></div>
+
+    <div id="loading-overlay" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center no-print">
+        <div class="flex flex-col items-center gap-3">
+            <div class="h-10 w-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-sm text-slate-300">Running analysis...</p>
+        </div>
+    </div>
+
     <header class="border-b border-slate-800 bg-slate-950 px-8 py-4 flex items-center justify-between">
         <div class="flex items-center space-x-3">
             <div class="h-8 w-8 rounded bg-teal-500 flex items-center justify-center font-bold text-slate-950">B</div>
@@ -125,19 +147,92 @@
 
                     <div>
                         <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                            Annual Goal
+                            Goals
+                        </label>
+
+                        <button onclick="toggleGoalsPanel()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 rounded-lg text-xs p-2 text-slate-100 transition-colors flex items-center gap-2">
+                            <span id="goals-summary-label">No goals set</span>
+                            <span class="text-slate-400">▾</span>
+                        </button>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                            Views &amp; Export
                         </label>
 
                         <div class="flex gap-1">
-                            <input type="number" id="filter-goal-value" min="0" step="1000" placeholder="e.g. 5000000" class="bg-slate-900 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 w-40">
-                            <button onclick="applyGoal()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
-                                Apply
+                            <button onclick="toggleSavedViewsPanel()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                                Saved Views
+                            </button>
+                            <button onclick="exportCurrentResultsCsv()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                                Export CSV
+                            </button>
+                            <button onclick="window.print()" type="button" class="bg-slate-900 border border-slate-700 hover:border-teal-500 text-slate-100 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                                Print / PDF
                             </button>
                         </div>
+                    </div>
+                </div>
 
-                        <span id="goal-input-label" class="text-[10px] text-slate-500 mt-1 block">
-                            Annual Goal ($)
-                        </span>
+                <div id="goals-panel" class="hidden bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Label</label>
+                            <input type="text" id="new-goal-label" placeholder="e.g. East Region Q3" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 w-40">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Scope</label>
+                            <select id="new-goal-scope-type" onchange="onGoalScopeTypeChange()" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
+                                <option value="overall">Overall</option>
+                                <option value="profit_center">Profit Center</option>
+                                <option value="agency_code">Agency Code</option>
+                                <option value="segment">Segment</option>
+                            </select>
+                        </div>
+
+                        <div id="new-goal-scope-value-container" class="hidden">
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Scope Value</label>
+                            <select id="new-goal-scope-value" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 min-w-[140px]"></select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Period</label>
+                            <select id="new-goal-period" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500">
+                                <option value="annual">Annual</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1" id="new-goal-target-label">Target ($)</label>
+                            <input type="number" id="new-goal-target" min="0" step="1000" placeholder="e.g. 500000" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 w-36">
+                        </div>
+
+                        <button onclick="addGoal()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-4 py-2 rounded-lg transition-colors">
+                            Add Goal
+                        </button>
+                    </div>
+
+                    <div id="goals-list" class="flex flex-wrap gap-2"></div>
+                </div>
+
+                <div id="saved-views-panel" class="hidden bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">View Name</label>
+                            <input type="text" id="saved-view-name" placeholder="e.g. Q3 Leadership Review" class="bg-slate-950 border border-slate-700 rounded-lg text-xs p-2 text-slate-100 focus:border-teal-500 w-56">
+                        </div>
+
+                        <button onclick="saveCurrentView()" class="bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-semibold px-4 py-2 rounded-lg transition-colors">
+                            Save Current View
+                        </button>
+                    </div>
+
+                    <div id="saved-views-list" class="flex flex-wrap gap-2 text-xs text-slate-400">
+                        No saved views yet on this device.
                     </div>
                 </div>
 
@@ -261,18 +356,18 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
                     <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Goal Status</p>
-                        <p id="forecast-goal-status" class="text-lg font-bold text-white mt-1">No Goal Set</p>
-                    </div>
-
-                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
-                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Projected Gap to Goal</p>
-                        <p id="forecast-goal-gap" class="text-lg font-bold text-white mt-1">$0</p>
-                    </div>
-
-                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
                         <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Trend Direction</p>
                         <p id="forecast-trend-direction" class="text-lg font-bold text-white mt-1">Flat</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Strongest Seasonal Month</p>
+                        <p id="forecast-seasonal-peak" class="text-lg font-bold text-white mt-1">—</p>
+                    </div>
+
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Weakest Seasonal Month</p>
+                        <p id="forecast-seasonal-trough" class="text-lg font-bold text-white mt-1">—</p>
                     </div>
                 </div>
 
@@ -354,54 +449,17 @@
 
             <section id="goal-vs-actual-card" class="bg-slate-950 border border-slate-800 rounded-xl p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h4 class="text-sm font-medium tracking-wide text-slate-300">Goal vs Actual Pacing</h4>
-                    <span id="goal-status-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-slate-800 text-slate-400">
-                        No Goal Set
-                    </span>
+                    <div>
+                        <h4 class="text-sm font-medium tracking-wide text-slate-300">Goal vs Actual Pacing</h4>
+                        <p class="text-xs text-slate-500 mt-1">
+                            Each goal below is evaluated within its own scope, period, and window. Projections use seasonality-adjusted forecasting once at least one full remaining month exists in the period.
+                        </p>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-                    <div class="flex flex-col items-center justify-center">
-                        <div class="relative w-48 h-48">
-                            <canvas id="goalGaugeChart"></canvas>
-
-                            <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span id="goal-achievement-pct" class="text-3xl font-bold text-white">0%</span>
-                                <span class="text-xs text-slate-400 mt-1">of goal</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="space-y-3 text-sm">
-                        <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Actual</p>
-                            <p id="goal-actual-value" class="text-lg font-bold text-white">$0</p>
-                        </div>
-
-                        <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Goal</p>
-                            <p id="goal-target-value" class="text-lg font-bold text-slate-300">$0</p>
-                        </div>
-
-                        <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Gap to Goal</p>
-                            <p id="goal-gap-value" class="text-lg font-bold text-slate-300">$0</p>
-                        </div>
-                    </div>
-
-                    <div class="space-y-3 text-sm">
-                        <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Expected Pace</p>
-                            <p id="goal-expected-pct" class="text-lg font-bold text-slate-300">0%</p>
-                            <p class="text-xs text-slate-500" id="goal-days-elapsed">0 days elapsed</p>
-                        </div>
-
-                        <div>
-                            <p class="text-xs text-slate-400 uppercase tracking-wider">Projected Annual Run Rate</p>
-                            <p id="goal-projection-value" class="text-lg font-bold text-purple-400">$0</p>
-                        </div>
-
-                        <div id="goal-narrative" class="text-xs text-slate-400 italic mt-2"></div>
+                <div id="goals-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div id="no-goals-placeholder" class="text-xs text-slate-500 italic p-4">
+                        No goals configured yet. Use the Goals control above the KPI row to add one or more targets by profit center, agency, or segment.
                     </div>
                 </div>
             </section>
@@ -477,14 +535,16 @@
 
         let allColumns = [];
         let activeCharts = {};
+        let activeGoalCharts = {};
         let activeMapping = {};
         let currentMetricTarget = "premium";
         let currentBusinessView = "all";
         let dateBounds = { min_date: null, max_date: null };
-        let currentGoalValue = 0;
+        let currentGoals = [];
         let allAgencyCodes = [];
         let selectedAgencyCodes = [];
         let pendingAgencySelections = new Set();
+        let lastResults = null;
 
         dropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
@@ -747,6 +807,10 @@
         }
 
         async function submitMapping() {
+            currentGoals = [];
+            renderGoalsChips();
+            updateGoalsSummaryLabel();
+
             activeMapping = {
                 financial_metric: document.getElementById('map-financial_metric').value,
                 timeline_metric: document.getElementById('map-timeline_metric').value,
@@ -824,16 +888,16 @@
 
             const btnPremium = document.getElementById('toggle-metric-premium');
             const btnCount = document.getElementById('toggle-metric-count');
-            const goalLabel = document.getElementById('goal-input-label');
+            const goalTargetLabel = document.getElementById('new-goal-target-label');
 
             if (target === 'premium') {
                 btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
                 btnCount.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
-                goalLabel.innerText = "Annual Goal ($)";
+                if (goalTargetLabel) goalTargetLabel.innerText = "Target ($)";
             } else {
                 btnCount.className = "px-3 py-1.5 text-xs font-medium rounded-md bg-teal-500 text-slate-950 transition-colors";
                 btnPremium.className = "px-3 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-slate-200 transition-colors";
-                goalLabel.innerText = "Annual Goal (# of Policies)";
+                if (goalTargetLabel) goalTargetLabel.innerText = "Target (# of Policies)";
             }
 
             triggerUpdate();
@@ -857,11 +921,282 @@
             triggerUpdate();
         }
 
-        function applyGoal() {
-            const raw = document.getElementById('filter-goal-value').value;
-            currentGoalValue = raw ? parseFloat(raw) : 0;
+        function toggleGoalsPanel() {
+            document.getElementById('goals-panel').classList.toggle('hidden');
+            document.getElementById('saved-views-panel').classList.add('hidden');
+        }
 
+        function toggleSavedViewsPanel() {
+            document.getElementById('saved-views-panel').classList.toggle('hidden');
+            document.getElementById('goals-panel').classList.add('hidden');
+            renderSavedViewsList();
+        }
+
+        async function onGoalScopeTypeChange() {
+            const scopeType = document.getElementById('new-goal-scope-type').value;
+            const container = document.getElementById('new-goal-scope-value-container');
+            const select = document.getElementById('new-goal-scope-value');
+            const targetLabel = document.getElementById('new-goal-target-label');
+
+            targetLabel.innerText = currentMetricTarget === "premium" ? "Target ($)" : "Target (#)";
+
+            if (scopeType === "overall") {
+                container.classList.add('hidden');
+                select.innerHTML = '';
+                return;
+            }
+
+            const columnByScope = {
+                profit_center: activeMapping.profit_center,
+                agency_code: activeMapping.agency_code,
+                segment: activeMapping.categorical_segment
+            };
+
+            const column = columnByScope[scopeType];
+
+            if (!column) {
+                container.classList.add('hidden');
+                select.innerHTML = '<option value="">Column not mapped</option>';
+                return;
+            }
+
+            container.classList.remove('hidden');
+            select.innerHTML = '<option>Loading...</option>';
+
+            try {
+                const response = await fetch('/api/column-values', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ column })
+                });
+
+                const data = await response.json();
+                const values = data.values || [];
+
+                select.innerHTML = values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+            } catch (err) {
+                select.innerHTML = '<option value="">Unable to load values</option>';
+            }
+        }
+
+        function addGoal() {
+            const label = document.getElementById('new-goal-label').value.trim() || 'Goal';
+            const scopeType = document.getElementById('new-goal-scope-type').value;
+            const scopeValueSelect = document.getElementById('new-goal-scope-value');
+            const scopeValue = scopeType === "overall" ? null : (scopeValueSelect.value || null);
+            const period = document.getElementById('new-goal-period').value;
+            const targetRaw = document.getElementById('new-goal-target').value;
+            const targetValue = targetRaw ? parseFloat(targetRaw) : 0;
+
+            if (!targetValue || targetValue <= 0) {
+                alert('Enter a target value greater than 0.');
+                return;
+            }
+
+            if (scopeType !== "overall" && !scopeValue) {
+                alert('Select a scope value for this goal.');
+                return;
+            }
+
+            currentGoals.push({
+                id: 'goal_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                label: label,
+                scope_type: scopeType,
+                scope_value: scopeValue,
+                period: period,
+                target_value: targetValue
+            });
+
+            document.getElementById('new-goal-label').value = '';
+            document.getElementById('new-goal-target').value = '';
+
+            renderGoalsChips();
+            updateGoalsSummaryLabel();
             triggerUpdate();
+        }
+
+        function removeGoal(id) {
+            currentGoals = currentGoals.filter(g => g.id !== id);
+            renderGoalsChips();
+            updateGoalsSummaryLabel();
+            triggerUpdate();
+        }
+
+        function renderGoalsChips() {
+            const list = document.getElementById('goals-list');
+
+            if (currentGoals.length === 0) {
+                list.innerHTML = '<span class="text-xs text-slate-500 italic">No goals added yet.</span>';
+                return;
+            }
+
+            list.innerHTML = currentGoals.map(g => {
+                const scopeLabel = g.scope_type === "overall" ? "Overall" : `${g.scope_type.replace('_', ' ')}: ${g.scope_value}`;
+
+                return `
+                    <span class="inline-flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-full px-3 py-1.5 text-xs text-slate-200">
+                        <span class="font-semibold">${escapeHtml(g.label)}</span>
+                        <span class="text-slate-500">&middot;</span>
+                        <span class="text-slate-400">${escapeHtml(scopeLabel)}</span>
+                        <span class="text-slate-500">&middot;</span>
+                        <span class="text-slate-400 capitalize">${escapeHtml(g.period)}</span>
+                        <span class="text-slate-500">&middot;</span>
+                        <span class="text-teal-400">${formatValueByMetric(g.target_value, currentMetricTarget)}</span>
+                        <button onclick="removeGoal('${g.id}')" class="text-red-400 hover:text-red-300 font-bold ml-1">&times;</button>
+                    </span>
+                `;
+            }).join('');
+        }
+
+        function updateGoalsSummaryLabel() {
+            const label = document.getElementById('goals-summary-label');
+            label.innerText = currentGoals.length === 0
+                ? 'No goals set'
+                : `${currentGoals.length} goal${currentGoals.length > 1 ? 's' : ''} set`;
+        }
+
+        function getSavedViews() {
+            try {
+                return JSON.parse(localStorage.getItem('bob_saved_views') || '{}');
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function setSavedViews(views) {
+            localStorage.setItem('bob_saved_views', JSON.stringify(views));
+        }
+
+        function saveCurrentView() {
+            const nameInput = document.getElementById('saved-view-name');
+            const name = nameInput.value.trim();
+
+            if (!name) {
+                alert('Enter a name for this view.');
+                return;
+            }
+
+            const views = getSavedViews();
+
+            views[name] = {
+                filters: {
+                    profit_center: document.getElementById('filter-profit-center').value,
+                    start_date: document.getElementById('filter-start-date').value,
+                    end_date: document.getElementById('filter-end-date').value,
+                    include_future_dates: document.getElementById('toggle-future-dates').checked,
+                    business_view: currentBusinessView,
+                    metric_target: currentMetricTarget,
+                    selected_agency_codes: selectedAgencyCodes
+                },
+                goals: currentGoals
+            };
+
+            setSavedViews(views);
+            nameInput.value = '';
+            renderSavedViewsList();
+        }
+
+        function renderSavedViewsList() {
+            const container = document.getElementById('saved-views-list');
+            const views = getSavedViews();
+            const names = Object.keys(views);
+
+            if (names.length === 0) {
+                container.innerHTML = 'No saved views yet on this device.';
+                return;
+            }
+
+            container.innerHTML = names.map(name => `
+                <span class="inline-flex items-center gap-2 bg-slate-950 border border-slate-700 rounded-full px-3 py-1.5">
+                    <button onclick="loadSavedView('${escapeHtml(name)}')" class="text-teal-400 hover:text-teal-300 font-medium">${escapeHtml(name)}</button>
+                    <button onclick="deleteSavedView('${escapeHtml(name)}')" class="text-red-400 hover:text-red-300 font-bold">&times;</button>
+                </span>
+            `).join('');
+        }
+
+        function loadSavedView(name) {
+            const views = getSavedViews();
+            const view = views[name];
+
+            if (!view) return;
+
+            const f = view.filters || {};
+
+            if (f.profit_center) document.getElementById('filter-profit-center').value = f.profit_center;
+            document.getElementById('filter-start-date').value = f.start_date || '';
+            document.getElementById('filter-end-date').value = f.end_date || '';
+            document.getElementById('toggle-future-dates').checked = !!f.include_future_dates;
+
+            setBusinessView(f.business_view || 'all');
+            setMetricTarget(f.metric_target || 'premium');
+
+            selectedAgencyCodes = f.selected_agency_codes || [];
+            updateAgencySummaryLabel();
+
+            currentGoals = view.goals || [];
+            renderGoalsChips();
+            updateGoalsSummaryLabel();
+
+            document.getElementById('saved-views-panel').classList.add('hidden');
+            triggerUpdate();
+        }
+
+        function deleteSavedView(name) {
+            const views = getSavedViews();
+            delete views[name];
+            setSavedViews(views);
+            renderSavedViewsList();
+        }
+
+        function exportCurrentResultsCsv() {
+            if (!lastResults) {
+                alert('Run an analysis first.');
+                return;
+            }
+
+            const rows = [];
+            rows.push(['Metric', 'Value']);
+            rows.push(['Total Premium', lastResults.kpis.total_premium]);
+            rows.push(['Policy Count', lastResults.kpis.total_accounts]);
+            rows.push(['Mean Exposure', lastResults.kpis.avg_account_size]);
+            rows.push(['Retention Rate %', lastResults.kpis.retention_rate]);
+            rows.push(['HHI Index', lastResults.kpis.hhi_index]);
+            rows.push([]);
+            rows.push(['Goal Label', 'Scope Type', 'Scope Value', 'Period', 'Period Start', 'Period End', 'Target', 'Actual', 'Achievement %', 'Expected %', 'Gap', 'Projected Period End', 'Status']);
+
+            (lastResults.goal_progress || []).forEach(g => {
+                rows.push([g.label, g.scope_type, g.scope_value || '', g.period, g.period_start, g.period_end, g.target, g.actual, g.achievement_pct, g.expected_pct, g.gap_to_goal, g.projected_period_end, g.status]);
+            });
+
+            rows.push([]);
+            rows.push(['Month', 'Value', 'Rolling Avg', 'New', 'Renewal']);
+
+            const timeline = lastResults.historical_timeline || {};
+
+            (timeline.labels || []).forEach((label, i) => {
+                rows.push([
+                    label,
+                    (timeline.values || [])[i],
+                    (timeline.rolling_avg || [])[i],
+                    (timeline.new_values || [])[i],
+                    (timeline.renewal_values || [])[i]
+                ]);
+            });
+
+            const csvContent = rows.map(row => row.map(cell => {
+                const val = cell === undefined || cell === null ? '' : String(cell);
+                return /[",\n]/.test(val) ? `"${val.replace(/"/g, '""')}"` : val;
+            }).join(',')).join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `book_of_business_export_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         async function triggerUpdate() {
@@ -891,6 +1226,8 @@
             document.getElementById('title-projection').innerText = `Expected 12-Month ${unitLabel} Model Projections${viewLabel}`;
             document.getElementById('title-season').innerText = `Average Yearly Seasonality Profile (${unitLabel})${viewLabel}`;
 
+            setLoadingState(true);
+
             try {
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
@@ -903,26 +1240,46 @@
                         end_date: endDate || null,
                         include_future_dates: includeFuture,
                         selected_agency_codes: selectedAgencyCodes,
-                        goal_value: currentGoalValue,
+                        goals: currentGoals,
                         business_view: currentBusinessView
                     })
                 });
 
-                if (!response.ok) {
-                    throw new Error("Engine threw an error processing metrics array matrix.");
-                }
-
                 const analysisResults = await response.json();
 
-                if (analysisResults.error) {
-                    throw new Error(analysisResults.error);
+                if (!response.ok || analysisResults.error) {
+                    throw new Error(analysisResults.error || `Analysis request failed (HTTP ${response.status}).`);
                 }
 
                 displayDashboard(analysisResults);
 
             } catch (err) {
-                alert("Analytical Refresh Exception: " + err.message);
+                showErrorToast("Analysis failed: " + err.message);
+            } finally {
+                setLoadingState(false);
             }
+        }
+
+        function setLoadingState(isLoading) {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.classList.toggle('hidden', !isLoading);
+        }
+
+        function showErrorToast(message) {
+            const container = document.getElementById('toast-container');
+            if (!container) { alert(message); return; }
+
+            const toast = document.createElement('div');
+            toast.className = "bg-red-500/15 border border-red-500/40 text-red-300 text-sm rounded-lg px-4 py-3 shadow-2xl max-w-md animate-fade-in";
+            toast.innerText = message;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.transition = "opacity 0.4s ease";
+                toast.style.opacity = "0";
+                setTimeout(() => toast.remove(), 400);
+            }, 6000);
         }
 
         function formatValueByMetric(val, metric) {
@@ -940,6 +1297,8 @@
         }
 
         function displayDashboard(res) {
+            lastResults = res;
+
             document.getElementById('kpi-premium').innerText = formatValueByMetric(res.kpis.total_premium, "premium");
             document.getElementById('kpi-accounts').innerText = Number(res.kpis.total_accounts || 0).toLocaleString();
             document.getElementById('kpi-avg-size').innerText = formatValueByMetric(res.kpis.avg_account_size, "premium");
@@ -960,7 +1319,7 @@
             }
 
             renderBusinessSplit(res.business_split);
-            renderGoalGauge(res.goal_progress);
+            renderGoalsCards(res.goal_progress);
             renderForecastOutlook(res.forecast_outlook);
             renderAIInsights(res.ai_insights);
             renderAnomalies(res.anomalies);
@@ -980,7 +1339,6 @@
             const conservative = Number(fo.conservative_year_end || 0);
             const aggressive = Number(fo.aggressive_year_end || 0);
             const growthPct = Number(fo.growth_vs_previous_year_pct || 0);
-            const gapToGoal = Number(fo.projected_gap_to_goal || 0);
 
             document.getElementById('forecast-current-actual').innerText = formatValueByMetric(currentActual, metric);
             document.getElementById('forecast-year-end').innerText = formatValueByMetric(projectedYearEnd, metric);
@@ -990,11 +1348,24 @@
             growthEl.innerText = `${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`;
             growthEl.className = "text-xl font-bold mt-1 " + (growthPct >= 0 ? "text-emerald-400" : "text-red-400");
 
-            document.getElementById('forecast-goal-status').innerText = fo.goal_status || "No Goal Set";
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const seasonalIndex = fo.seasonal_index || {};
+            const seasonalEntries = Object.entries(seasonalIndex);
 
-            const gapEl = document.getElementById('forecast-goal-gap');
-            gapEl.innerText = `${gapToGoal >= 0 ? '+' : '-'}${formatValueByMetric(Math.abs(gapToGoal), metric)}`;
-            gapEl.className = "text-lg font-bold mt-1 " + (gapToGoal >= 0 ? "text-emerald-400" : "text-red-400");
+            const peakEl = document.getElementById('forecast-seasonal-peak');
+            const troughEl = document.getElementById('forecast-seasonal-trough');
+
+            if (seasonalEntries.length > 0) {
+                const sorted = seasonalEntries.slice().sort((a, b) => b[1] - a[1]);
+                const peak = sorted[0];
+                const trough = sorted[sorted.length - 1];
+
+                peakEl.innerText = `${monthNames[parseInt(peak[0], 10) - 1]} (${(peak[1] * 100).toFixed(0)}%)`;
+                troughEl.innerText = `${monthNames[parseInt(trough[0], 10) - 1]} (${(trough[1] * 100).toFixed(0)}%)`;
+            } else {
+                peakEl.innerText = "—";
+                troughEl.innerText = "—";
+            }
 
             const trendEl = document.getElementById('forecast-trend-direction');
             trendEl.innerText = fo.trend_direction || "Flat";
@@ -1194,102 +1565,137 @@
             });
         }
 
-        function renderGoalGauge(gp) {
-            if (!gp) return;
+        const GOAL_STATUS_STYLES = {
+            ahead: { ring: '#10b981', bg: 'bg-emerald-500/20 text-emerald-400', label: 'Ahead of Pace' },
+            on_pace: { ring: '#f59e0b', bg: 'bg-amber-500/20 text-amber-400', label: 'On Pace' },
+            behind: { ring: '#ef4444', bg: 'bg-red-500/20 text-red-400', label: 'Behind Pace' },
+            no_goal_set: { ring: '#475569', bg: 'bg-slate-800 text-slate-400', label: 'No Goal Set' },
+            no_time_elapsed: { ring: '#475569', bg: 'bg-slate-800 text-slate-400', label: 'Insufficient Data' }
+        };
 
-            const metric = gp.metric_type || currentMetricTarget;
+        function renderGoalsCards(goalProgressList) {
+            const container = document.getElementById('goals-cards-container');
+            const list = goalProgressList || [];
 
-            const statusColors = {
-                ahead: {
-                    ring: '#10b981',
-                    bg: 'bg-emerald-500/20 text-emerald-400',
-                    label: 'Ahead of Pace'
-                },
-                on_pace: {
-                    ring: '#f59e0b',
-                    bg: 'bg-amber-500/20 text-amber-400',
-                    label: 'On Pace'
-                },
-                behind: {
-                    ring: '#ef4444',
-                    bg: 'bg-red-500/20 text-red-400',
-                    label: 'Behind Pace'
-                },
-                no_goal_set: {
-                    ring: '#475569',
-                    bg: 'bg-slate-800 text-slate-400',
-                    label: 'No Goal Set'
-                },
-                no_time_elapsed: {
-                    ring: '#475569',
-                    bg: 'bg-slate-800 text-slate-400',
-                    label: 'Insufficient Data'
-                }
-            };
-
-            const cfg = statusColors[gp.status] || statusColors.no_goal_set;
-
-            const achievement = Math.max(0, Number(gp.achievement_pct || 0));
-            const displayPct = Math.min(achievement, 100);
-
-            const badge = document.getElementById('goal-status-badge');
-            badge.className = `text-xs font-semibold px-3 py-1 rounded-full ${cfg.bg}`;
-            badge.innerText = cfg.label;
-
-            document.getElementById('goal-achievement-pct').innerText = `${achievement.toFixed(1)}%`;
-            document.getElementById('goal-actual-value').innerText = formatValueByMetric(gp.actual, metric);
-            document.getElementById('goal-target-value').innerText = gp.goal > 0 ? formatValueByMetric(gp.goal, metric) : "—";
-
-            const gap = Number(gp.gap_to_goal || 0);
-            const gapEl = document.getElementById('goal-gap-value');
-
-            if (gp.goal > 0) {
-                gapEl.innerText = (gap >= 0 ? "+" : "-") + formatValueByMetric(Math.abs(gap), metric);
-                gapEl.className = "text-lg font-bold " + (gap >= 0 ? "text-emerald-400" : "text-red-400");
-            } else {
-                gapEl.innerText = "—";
-                gapEl.className = "text-lg font-bold text-slate-300";
-            }
-
-            document.getElementById('goal-expected-pct').innerText = `${Number(gp.expected_pct || 0).toFixed(1)}%`;
-            document.getElementById('goal-days-elapsed').innerText = `${Number(gp.days_elapsed || 0).toLocaleString()} days elapsed`;
-            document.getElementById('goal-projection-value').innerText = formatValueByMetric(gp.projected_year_end || 0, metric);
-
-            const narrative = document.getElementById('goal-narrative');
-
-            if (gp.status === 'no_goal_set') {
-                narrative.innerText = 'Enter a goal above to see pacing analysis.';
-            } else if (gp.status === 'ahead') {
-                narrative.innerText = `Currently outpacing the pro-rated target by ${(achievement - Number(gp.expected_pct || 0)).toFixed(1)} points.`;
-            } else if (gp.status === 'on_pace') {
-                narrative.innerText = 'Tracking within acceptable range of expected pacing.';
-            } else if (gp.status === 'behind') {
-                narrative.innerText = `Trailing pro-rated pace by ${(Number(gp.expected_pct || 0) - achievement).toFixed(1)} points.`;
-            } else {
-                narrative.innerText = 'Not enough time elapsed to compute pace.';
-            }
-
-            initChartInstance('goalGaugeChart', {
-                type: 'doughnut',
-                data: {
-                    datasets: [{
-                        data: [displayPct, 100 - displayPct],
-                        backgroundColor: [cfg.ring, '#1e293b'],
-                        borderWidth: 0,
-                        cutout: '75%',
-                        circumference: 360,
-                        rotation: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { enabled: false }
-                    }
+            Object.keys(activeGoalCharts).forEach(ctxId => {
+                if (!list.find(g => `goalGauge_${g.id}` === ctxId)) {
+                    activeGoalCharts[ctxId].destroy();
+                    delete activeGoalCharts[ctxId];
                 }
             });
+
+            if (list.length === 0) {
+                container.innerHTML = `
+                    <div id="no-goals-placeholder" class="text-xs text-slate-500 italic p-4 lg:col-span-2">
+                        No goals configured yet. Use the Goals control above the KPI row to add one or more targets by profit center, agency, or segment.
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = list.map(gp => {
+                const metric = gp.metric_type || currentMetricTarget;
+                const cfg = GOAL_STATUS_STYLES[gp.status] || GOAL_STATUS_STYLES.no_goal_set;
+                const achievement = Math.max(0, Number(gp.achievement_pct || 0));
+                const gap = Number(gp.gap_to_goal || 0);
+                const scopeLabel = gp.scope_type === "overall"
+                    ? "Overall"
+                    : `${gp.scope_type.replace('_', ' ')}: ${gp.scope_value}`;
+                const canvasId = `goalGauge_${gp.id}`;
+
+                let narrative;
+
+                if (gp.status === 'no_goal_set') {
+                    narrative = 'No target set for this goal.';
+                } else if (gp.status === 'ahead') {
+                    narrative = `Outpacing pro-rated target by ${(achievement - Number(gp.expected_pct || 0)).toFixed(1)} points.`;
+                } else if (gp.status === 'on_pace') {
+                    narrative = 'Tracking within acceptable range of expected pace.';
+                } else if (gp.status === 'behind') {
+                    narrative = `Trailing pro-rated pace by ${(Number(gp.expected_pct || 0) - achievement).toFixed(1)} points.`;
+                } else {
+                    narrative = 'Not enough time has elapsed in this period to compute pace.';
+                }
+
+                return `
+                    <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <p class="text-sm font-semibold text-white">${escapeHtml(gp.label)}</p>
+                                <p class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">
+                                    ${escapeHtml(scopeLabel)} &middot; ${escapeHtml(gp.period)} &middot; ${escapeHtml(gp.period_start)} to ${escapeHtml(gp.period_end)}
+                                </p>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-semibold px-3 py-1 rounded-full ${cfg.bg}">${cfg.label}</span>
+                                <button onclick="removeGoal('${gp.id}')" title="Remove goal" class="text-slate-500 hover:text-red-400 text-sm font-bold">&times;</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-3 items-center">
+                            <div class="flex flex-col items-center">
+                                <div class="relative w-24 h-24">
+                                    <canvas id="${canvasId}"></canvas>
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span class="text-lg font-bold text-white">${achievement.toFixed(0)}%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-span-2 space-y-1.5 text-xs">
+                                <div class="flex justify-between"><span class="text-slate-400">Actual</span><span class="font-semibold text-white">${formatValueByMetric(gp.actual, metric)}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Target</span><span class="font-semibold text-slate-300">${gp.target > 0 ? formatValueByMetric(gp.target, metric) : "—"}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Gap</span><span class="font-semibold ${gap >= 0 ? 'text-emerald-400' : 'text-red-400'}">${gp.target > 0 ? (gap >= 0 ? "+" : "-") + formatValueByMetric(Math.abs(gap), metric) : "—"}</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Expected Pace</span><span class="font-semibold text-slate-300">${Number(gp.expected_pct || 0).toFixed(1)}%</span></div>
+                                <div class="flex justify-between"><span class="text-slate-400">Projected Period End</span><span class="font-semibold text-purple-400">${formatValueByMetric(gp.projected_period_end, metric)}</span></div>
+                            </div>
+                        </div>
+
+                        <p class="text-[11px] text-slate-400 italic mt-3">${escapeHtml(narrative)}</p>
+                    </div>
+                `;
+            }).join('');
+
+            list.forEach(gp => {
+                const displayPct = Math.min(Math.max(0, Number(gp.achievement_pct || 0)), 100);
+                const cfg = GOAL_STATUS_STYLES[gp.status] || GOAL_STATUS_STYLES.no_goal_set;
+
+                initGoalChartInstance(`goalGauge_${gp.id}`, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [displayPct, 100 - displayPct],
+                            backgroundColor: [cfg.ring, '#1e293b'],
+                            borderWidth: 0,
+                            cutout: '75%',
+                            circumference: 360,
+                            rotation: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false }
+                        }
+                    }
+                });
+            });
+        }
+
+        function initGoalChartInstance(ctxId, configuration) {
+            if (activeGoalCharts[ctxId]) {
+                activeGoalCharts[ctxId].destroy();
+                delete activeGoalCharts[ctxId];
+            }
+
+            const el = document.getElementById(ctxId);
+
+            if (el) {
+                activeGoalCharts[ctxId] = new Chart(el.getContext('2d'), configuration);
+            }
         }
 
         function renderAnomalies(anomalies) {
