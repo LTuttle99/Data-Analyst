@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.requests import Request
 from analyzer import BookOfBusinessAnalyzer
 
+
 app = FastAPI(title="Book of Business Intelligent Analyzer")
 
 UPLOADED_FILE_CACHE = {}
